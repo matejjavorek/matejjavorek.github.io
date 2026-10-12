@@ -201,8 +201,7 @@ function render() {
     </div></div>
     <div class="summary"><span>${t
       ? (left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ splnený ✓ <span class="muted">(+${-left} kcal)</span>`)
-      : 'Pridaj, čo si zjedol.'}</span>
-      <button class="round orange" data-act="add" aria-label="Pridať jedlo">${icon('plus', 20, 2.4)}</button></div>
+      : 'Pridaj, čo si zjedol.'}</span></div>
   </div>`;
 
   // Voda
