@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Jedlo</title>
-<meta name="description" content="Denník stravovania – kalórie, makrá, návyky a rozpoznanie jedla z fotky.">
+<meta name="description" content="Denník stravovania – kalórie, makrá, voda, váha a rozpoznanie jedla z fotky.">
 <meta name="theme-color" content="#2b241e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,36 +15,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="shell">
-<main class="glass">
   <header class="top">
-    <button class="icon-btn" id="prev-day" aria-label="Predošlý deň">‹</button>
-    <h1 id="title">Dnes</h1>
-    <button class="icon-btn" id="next-day" aria-label="Ďalší deň">›</button>
+    <div class="day">
+      <div class="day-row">
+        <h1 id="title">Dnes</h1>
+        <button class="round sm" id="prev-day" aria-label="Predošlý deň"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="round sm" id="next-day" aria-label="Ďalší deň"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <p class="date" id="date"></p>
+      <p class="nd" id="nameday"></p>
+    </div>
+    <button class="avatar" id="open-profile" aria-label="Profil">?</button>
   </header>
-  <section id="view-today" class="view active"></section>
-  <section id="view-stats" class="view"></section>
-  <section id="view-weight" class="view"></section>
-  <section id="view-profile" class="view"></section>
-</main>
+  <main id="page"></main>
 </div>
 
-<nav class="dock tabs" aria-label="Navigácia">
-  <button class="dk active" data-view="today" aria-label="Dnes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v8a2 2 0 002 2v8M5 3v5a2 2 0 002 2M9 3v5a2 2 0 01-2 2"/><path d="M17 21V3c-2 1.5-3 4-3 7s1 4 3 4"/></svg><span class="lbl">Dnes</span></button>
-  <button class="dk" data-view="stats" aria-label="Štatistiky"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg><span class="lbl">Štatistiky</span></button>
-  <button class="dk add" id="open-add" aria-label="Pridať jedlo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-  <button class="dk" data-view="weight" aria-label="Váha"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="4"/><path d="M8.5 11a3.5 3.5 0 017 0M12 11l1.5-2"/></svg><span class="lbl">Váha</span></button>
-  <button class="dk" data-view="profile" aria-label="Profil"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg><span class="lbl">Profil</span></button>
-</nav>
+<button class="fab" data-act="add" aria-label="Pridať jedlo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 
 <div class="sheet-bg" id="sheet-bg" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-head">
-      <h2 id="sheet-title">Pridať jedlo</h2>
-      <button class="icon-btn" id="close-add" aria-label="Zavrieť">✕</button>
+      <h2 id="sheet-title"></h2>
+      <button class="round sm" id="close-sheet" aria-label="Zavrieť"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div id="sheet-body"></div>
   </div>
@@ -54,7 +50,7 @@
 <input type="file" id="import-input" accept="application/json" hidden>
 <div class="toast" id="toast" hidden></div>
 
-<script src="foods.js"></script>
-<script src="app.js"></script>
+<script src="meniny.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
