@@ -1,5 +1,5 @@
 // Offline cache pre appku. Pri zmene súborov zvýš verziu.
-const CACHE = 'jedlo-v3';
+const CACHE = 'jedlo-v4';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'meniny.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

@@ -20,7 +20,6 @@ function defaultState() {
     entries: [],
     weights: [],
     water: {},
-    health: {},
   };
 }
 
@@ -112,12 +111,10 @@ const ICON = {
   right: '<path d="M9 5l7 7-7 7"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   scale: '<rect x="3" y="4" width="18" height="16" rx="4"/><path d="M8.5 11a3.5 3.5 0 017 0M12 11l1.5-2"/>',
-  flame: '<path d="M12 21c-3.9 0-7-2.7-7-6.5 0-3 2-5.2 3.5-6.6.3 1.6 1.2 2.6 2.2 3.1C10.5 7.5 12 4.5 14.5 3c-.3 2.6.8 4.5 2.4 6.2C18.3 10.7 19 12.5 19 14.5 19 18.3 15.9 21 12 21z"/>',
   glass: '<path d="M6 3h12l-1.5 16.5a2 2 0 01-2 1.5h-5a2 2 0 01-2-1.5z"/><path d="M6.6 9h10.8"/>',
   bottle5: '<path d="M10 2h4v3l1.5 2.5V20a2 2 0 01-2 2h-3a2 2 0 01-2-2V7.5L10 5z"/><path d="M8.5 12h7"/>',
   bottle75: '<path d="M10 2h4v3l2 2.5V20a2 2 0 01-2 2h-4a2 2 0 01-2-2V7.5L10 5z"/><path d="M8 11h8"/>',
   bottle1: '<path d="M9.5 2h5v3l2.5 2.5V20a2 2 0 01-2 2H9a2 2 0 01-2-2V7.5L9.5 5z"/><path d="M7 10h10"/>',
-  health: '<path d="M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z"/>',
 };
 const icon = (k, s = 20, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
@@ -130,10 +127,7 @@ function targets(date) {
   const w = currentWeight();
   if (!w || !p.height || !p.age) return null;
   const bmr = 10 * w + 6.25 * p.height - 5 * p.age + (p.sex === 'f' ? -161 : 5);
-  let tdee = bmr * p.activity;
-  // Ak Zdravie ukáže, že si v ten deň spálil viac, cieľ sa zvýši (nikdy neklesne pod odhad z profilu).
-  const h = S.health[date];
-  if (h?.active) tdee = Math.max(tdee, (bmr + h.active) * 1.1);
+  const tdee = bmr * p.activity;
   const kcal = tdee + Number(p.surplus || 0);
   const protein = w * p.proteinPerKg;
   const fat = (kcal * 0.25) / 9;
@@ -187,7 +181,6 @@ function render() {
 
   const t = targets(curDate);
   const tot = dayTotals(curDate);
-  const h = S.health[curDate];
   let html = '';
 
   if (!t) {
@@ -210,7 +203,6 @@ function render() {
       ? (left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ splnený ✓ <span class="muted">(+${-left} kcal)</span>`)
       : 'Pridaj, čo si zjedol.'}</span>
       <button class="round orange" data-act="add" aria-label="Pridať jedlo">${icon('plus', 20, 2.4)}</button></div>
-    ${h ? `<div class="health-line">${icon('flame', 15)} Zo Zdravia: <b>${r0(h.active)} kcal</b> aktívne${h.steps ? ` · <b>${r0(h.steps).toLocaleString('sk-SK')}</b> krokov` : ''}</div>` : ''}
   </div>`;
 
   // Voda
@@ -679,34 +671,11 @@ function openEntry(id, again = false) {
   };
 }
 
-// ---------- Prepojenie so Zdravím (Apple Health cez Skratky) ----------
-// Skratka otvorí appku s údajmi v časti za #, ktorá sa neposiela na server:
-//   https://matejjavorek.github.io/jedlo/#aktivne=650&kroky=12000
-function readHealthFromUrl() {
-  if (!location.hash.includes('aktivne=') && !location.hash.includes('kroky=')) return;
-  const q = new URLSearchParams(location.hash.slice(1));
-  const num = k => {
-    const v = Number(String(q.get(k) || '').replace(',', '.').replace(/[^\d.]/g, ''));
-    return Number.isFinite(v) && v > 0 ? v : 0;
-  };
-  const active = Math.min(num('aktivne'), 8000);
-  const steps = Math.min(num('kroky'), 150000);
-  history.replaceState(null, '', location.pathname + location.search);
-  if (!active && !steps) return;
-  const d = todayKey();
-  S.health[d] = { active: r0(active), steps: r0(steps), ts: Date.now() };
-  save();
-  curDate = d;
-  render();
-  toast(`Zo Zdravia: ${r0(active)} kcal aktívne${steps ? `, ${r0(steps)} krokov` : ''}`);
-}
-
 // ---------- Profil (vpravo hore) ----------
 function openProfile() {
   const p = S.profile;
   const t = targets(todayKey());
   const opt = (val, list) => list.map(([v, l]) => `<option value="${v}" ${String(v) === String(val) ? 'selected' : ''}>${l}</option>`).join('');
-  const lastH = Object.entries(S.health).sort((a, b) => b[0].localeCompare(a[0]))[0];
   openSheet('Profil', `
     <form id="profile-form">
       <label class="field">Meno<input name="name" value="${esc(p.name)}" autocomplete="given-name"></label>
@@ -737,24 +706,6 @@ function openProfile() {
     <select class="input" id="api-model" style="margin-top:8px">${opt(p.model, MODELS)}</select>
     <button class="btn" id="key-save" style="margin-top:8px">Uložiť kľúč</button>
     <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
-
-    <h3 class="sub-h">Prepojenie so Zdravím</h3>
-    <p class="small" style="margin-bottom:8px">${lastH ? `Naposledy: ${parseDay(lastH[0]).toLocaleDateString('sk-SK')} – ${lastH[1].active} kcal aktívne.` : 'Zatiaľ žiadne údaje zo Zdravia.'}</p>
-    <details class="howto"><summary>Ako to nastaviť (5 minút)</summary>
-      <ol>
-        <li>V appke <b>Huawei Health</b> zapni zdieľanie údajov do appky <b>Zdravie</b> (Ja → Nastavenia → zdieľanie údajov; názvy sa môžu líšiť). V Zdraví over, že pod <i>Aktívna energia</i> pribúdajú údaje z Huawei.</li>
-        <li>Otvor appku <b>Skratky</b> → <b>+</b> → názov „Jedlo“.</li>
-        <li>Pridaj akciu <b>Nájsť vzorky zdravia</b>: Typ = <i>Aktívna energia</i>, Dátum začiatku = <i>Dnes</i>, Zoskupiť podľa = <i>Deň</i>.</li>
-        <li>Pridaj akciu <b>Získať podrobnosti vzoriek zdravia</b> → <i>Hodnota</i>. Výsledok premenuj na „Aktívne“.</li>
-        <li>To isté zopakuj pre <i>Kroky</i> → premenuj na „Kroky“.</li>
-        <li>Ak vychádza viac čísel naraz, pridaj za ne akciu <b>Vypočítať štatistiky</b> → <i>Súčet</i>.</li>
-        <li>Pridaj akciu <b>Otvoriť URL</b>:<br><code>https://matejjavorek.github.io/jedlo/#aktivne=[Aktívne]&amp;kroky=[Kroky]</code></li>
-        <li>Pri prvom spustení povoľ Skratkám čítať Zdravie.</li>
-        <li>Skratku pridaj na plochu (Zdieľať → Pridať na plochu) a otváraj appku <b>len cez ňu</b>.</li>
-      </ol>
-      <p class="small muted">Skratka otvára appku v Safari, ktoré má iné úložisko ako ikona „Pridať na plochu“ zo Safari. Preto používaj stále rovnakú cestu – skratku. Ak si už niečo zapísal inde, prenes to cez Export/Import.</p>
-      <p class="small muted">Keď Zdravie ukáže, že si spálil viac, ako ráta profil, denný cieľ sa sám zvýši.</p>
-    </details>
 
     <h3 class="sub-h">Záloha</h3>
     <div class="grid2"><button class="btn" id="exp">Export</button><button class="btn" id="imp">Import</button></div>
@@ -857,8 +808,6 @@ $('#import-input').addEventListener('change', async ev => {
   }
 });
 
-window.addEventListener('hashchange', readHealthFromUrl);
-
 // Po polnoci prepni na nový deň, ak appka ostala otvorená.
 let lastToday = todayKey();
 document.addEventListener('visibilitychange', () => {
@@ -876,5 +825,4 @@ if ('serviceWorker' in navigator) {
 }
 
 render();
-readHealthFromUrl();
 if (!S.profile.age) openProfile();
