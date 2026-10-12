@@ -279,10 +279,53 @@ function weekStats() {
 }
 
 // ---------- Recepty zo Športovej kuchárky ----------
-// Kuchárka je platený obsah, preto nie je v (verejnom) repozitári – načítava sa zo súboru do tohto zariadenia.
+// Kuchárka je platený obsah, preto je na (verejnom) webe len zašifrovaná (kucharka.bin).
+// Odomkne sa raz heslom; rozšifrovaná kópia ostane len v tomto zariadení.
+const PASS_KEY = 'jedlo.kucharka.heslo';
 let BOOK = null;
 try { BOOK = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch { BOOK = null; }
 let recipeLimit = 5;
+
+async function decryptBook(password) {
+  const res = await fetch('kucharka.bin', { cache: 'no-cache' });
+  if (!res.ok) throw new Error('Kuchárku sa nepodarilo stiahnuť.');
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const salt = buf.slice(0, 16), iv = buf.slice(16, 28), data = buf.slice(28);
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base,
+    { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  let plain;
+  try {
+    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+  } catch {
+    throw new Error('Nesprávne heslo.');
+  }
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function storeBook(data) {
+  BOOK = data;
+  try { localStorage.setItem(BOOK_KEY, JSON.stringify(data)); } catch { /* ostane aspoň v pamäti */ }
+}
+
+async function unlockBook(password) {
+  const data = await decryptBook(password);
+  storeBook(data);
+  try { localStorage.setItem(PASS_KEY, password); } catch { /* nič */ }
+  render();
+  toast(`Kuchárka odomknutá: ${data.recipes.length} receptov`);
+}
+
+// Pri štarte potichu načítaj novšiu verziu kuchárky (napr. keď pribudnú recepty).
+async function refreshBook() {
+  let pass = '';
+  try { pass = localStorage.getItem(PASS_KEY) || ''; } catch { return; }
+  if (!pass) return;
+  try {
+    const data = await decryptBook(pass);
+    if (!BOOK || data.version !== BOOK.version) { storeBook(data); render(); }
+  } catch { /* offline alebo bez zmeny */ }
+}
 
 // Koľko požiadaviek receptu máš doma (požiadavka = skupina alternatív, stačí jedna).
 function matchRecipe(r, have) {
@@ -296,14 +339,16 @@ function chipLabel(id) { return BOOK?.chips.find(c => c.id === id)?.label.split(
 function recipesCard() {
   if (!BOOK) {
     return `<div class="card"><h3>Čo si uvarím?</h3>
-      <p class="small muted" style="margin-bottom:12px">Načítaj súbor <b>kucharka.json</b> (je na tvojom Google Disku) – recepty sa uložia len do tohto zariadenia.</p>
-      <button class="btn primary" data-act="book-import">Načítať kuchárku</button></div>`;
+      <p class="small muted" style="margin-bottom:12px">Recepty zo Športovej kuchárky. Zadaj heslo – stačí raz.</p>
+      <form class="row" id="book-form"><input class="input" id="book-pass" type="password" autocomplete="off" placeholder="Heslo ku kuchárke" style="margin:0">
+        <button class="btn primary sm">Odomknúť</button></form></div>`;
   }
   const cats = BOOK.cats.filter(c => BOOK.recipes.some(r => r.cat === c.id));
   if (!cats.some(c => c.id === S.recipeCat)) S.recipeCat = cats[0]?.id;
   const have = new Set(S.fridge);
   let html = `<div class="card"><h3>Čo si uvarím?</h3>
     <div class="seg scroll">${cats.map(c => `<button data-rcat="${c.id}" class="${c.id === S.recipeCat ? 'on' : ''}">${c.label}</button>`).join('')}</div>
+    <button class="fridge all" data-act="all-recipes"><span><b>Všetky recepty</b><span class="small muted">${BOOK.recipes.length} receptov · hľadať podľa názvu</span></span>${icon('right', 18, 2.2)}</button>
     <button class="fridge" data-act="fridge"><span><b>Čo mám doma</b><span class="small muted">${have.size ? S.fridge.map(chipLabel).join(', ') : 'Naklikaj suroviny'}</span></span>${icon('right', 18, 2.2)}</button>`;
   if (!have.size) return html + '</div>';
   const list = BOOK.recipes.filter(r => r.cat === S.recipeCat && r.req.length)
@@ -335,7 +380,7 @@ function openRecipe(id) {
   const r = BOOK.recipes.find(x => x.id === Number(id));
   if (!r) return;
   const have = new Set(S.fridge);
-  const meta = [r.time && r.time + ' min', r.diff, r.prep && 'Meal prep', r.portions > 1 && `recept na ${r.portions} porcie`].filter(Boolean).join(' · ');
+  const meta = [r.time && r.time + ' min' + (r.extra ? ' ' + r.extra : ''), r.diff, r.prep && 'Meal prep', r.portions > 1 && `recept na ${r.portions} porcie`].filter(Boolean).join(' · ');
   openSheet(r.title, `
     ${meta ? `<p class="small muted" style="margin:-8px 0 12px">${esc(meta)}</p>` : ''}
     ${r.kcal ? `<div class="ai-sum"><div class="grid3">
@@ -344,7 +389,7 @@ function openRecipe(id) {
       <div><b>${r0(r.c)}/${r0(r.f)}</b><div class="lbl">sach./tuky g</div></div></div></div>` : ''}
     <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
     <div class="ing">${r.ing.map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div>
-    ${r.req.some(a => !a.some(x => have.has(x))) ? `<p class="miss" style="margin-top:8px">Chýba: ${r.req.filter(a => !a.some(x => have.has(x) || (x === 'ovocie' && [...have].some(h => FRUITS.has(h))))).map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
+    ${have.size && r.req.some(a => !a.some(x => have.has(x))) ? `<p class="miss" style="margin-top:8px">Chýba: ${r.req.filter(a => !a.some(x => have.has(x) || (x === 'ovocie' && [...have].some(h => FRUITS.has(h))))).map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
     <h3 class="sub-h">Postup</h3>
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
     ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}
@@ -357,18 +402,25 @@ function eatRecipe(id) {
   addEntries([{ name: r.title, g: 0, kcal: r.kcal, p: r.p, c: r.c, f: r.f, fib: r.fib || 0, score: 8 }], 'kucharka');
 }
 
-async function importBook(file) {
-  try {
-    const data = JSON.parse(await file.text());
-    if (!Array.isArray(data.recipes) || !Array.isArray(data.chips)) throw new Error();
-    localStorage.setItem(BOOK_KEY, JSON.stringify(data));
-    BOOK = data;
-    render();
-    toast(`Kuchárka načítaná: ${data.recipes.length} receptov`);
-  } catch {
-    toast('Toto nie je súbor kuchárky.');
-  }
+function openAllRecipes(q = '') {
+  const cats = BOOK.cats.filter(c => BOOK.recipes.some(r => r.cat === c.id));
+  openSheet('Všetky recepty', `
+    <input class="input" id="recipe-q" type="search" placeholder="Hľadať (napr. kuře, kaše, losos)" value="${esc(q)}" autocomplete="off">
+    <div id="recipe-results" style="margin-top:12px"></div>`);
+  const draw = () => {
+    const nq = norm($('#recipe-q').value.trim());
+    const hit = r => !nq || norm(r.title + ' ' + r.ing.join(' ')).includes(nq);
+    $('#recipe-results').innerHTML = cats.map(c => {
+      const rs = BOOK.recipes.filter(r => r.cat === c.id && hit(r));
+      return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3><div class="list">${rs.map(r =>
+        `<button class="recipe" data-recipe="${r.id}"><div class="info"><div class="name">${esc(r.title)}</div>
+          <div class="small muted">${[r.time && r.time + ' min', r.kcal && r0(r.kcal) + ' kcal', r.p && 'B ' + r0(r.p) + ' g'].filter(Boolean).join(' · ')}</div></div>${icon('right', 16, 2.2)}</button>`).join('')}</div>` : '';
+    }).join('') || '<div class="empty">Nič sa nenašlo.</div>';
+  };
+  $('#recipe-q').addEventListener('input', draw);
+  draw();
 }
+
 
 function streak() {
   const dates = new Set(S.entries.map(e => e.date));
@@ -809,8 +861,8 @@ function openProfile() {
     <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
 
     <h3 class="sub-h">Športová kuchárka</h3>
-    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Načítaná: ${BOOK.recipes.length} receptov.` : 'Zatiaľ nenačítaná.'}</p>
-    <button class="btn" data-act="book-import">${BOOK ? 'Načítať novšiu verziu' : 'Načítať kuchárku'}</button>
+    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá – odomkneš ju heslom na hlavnej stránke.'}</p>
+    ${BOOK ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
 
     <h3 class="sub-h">Záloha</h3>
     <div class="grid2"><button class="btn" id="exp">Export</button><button class="btn" id="imp">Import</button></div>
@@ -870,7 +922,12 @@ document.addEventListener('click', ev => {
   else if (d.drink) addWater(Number(d.drink));
   else if (d.entry) openEntry(d.entry);
   else if (d.recent) openEntry(d.recent, true);
-  else if (d.act === 'book-import') $('#book-input').click();
+  else if (d.act === 'all-recipes') openAllRecipes();
+  else if (d.act === 'book-lock') {
+    BOOK = null;
+    try { localStorage.removeItem(BOOK_KEY); localStorage.removeItem(PASS_KEY); } catch { /* nič */ }
+    closeSheet(); render(); toast('Kuchárka zamknutá');
+  }
   else if (d.act === 'fridge') openFridge();
   else if (d.act === 'fridge-clear') { S.fridge = []; save(); openFridge(); }
   else if (d.act === 'fridge-done') { closeSheet(); recipeLimit = 5; render(); }
@@ -910,10 +967,19 @@ $('#photo-input').addEventListener('change', async ev => {
   }
 });
 
-$('#book-input').addEventListener('change', ev => {
-  const file = ev.target.files[0];
-  ev.target.value = '';
-  if (file) importBook(file);
+document.addEventListener('submit', async ev => {
+  if (ev.target.id !== 'book-form') return;
+  ev.preventDefault();
+  const pass = $('#book-pass').value.trim();
+  if (!pass) return toast('Zadaj heslo.');
+  const btn = ev.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    await unlockBook(pass);
+  } catch (err) {
+    btn.disabled = false;
+    toast(err.message);
+  }
 });
 
 $('#import-input').addEventListener('change', async ev => {
@@ -948,4 +1014,5 @@ if ('serviceWorker' in navigator) {
 }
 
 render();
+refreshBook();
 if (!S.profile.age) openProfile();

@@ -1,3 +1,3 @@
-# Recepty z platenej kuchárky sa nepublikujú
+# Recepty z platenej kuchárky sa nepublikujú v čitateľnej podobe (kucharka.bin je zašifrovaná)
 kucharka*.json
 *.pdf
