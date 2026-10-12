@@ -3,6 +3,7 @@
 // ---------- Úložisko ----------
 const STORE_KEY = 'jedlo.v1';
 const KEY_KEY = 'jedlo.apikey';
+const BOOK_KEY = 'jedlo.kucharka';
 const MODELS = [
   ['claude-opus-5-5', 'Claude Opus 5.5 – presnejší (~1–2 centy / fotka)'],
   ['claude-haiku-5-5', 'Claude Haiku 5.5 – lacnejší, rýchlejší'],
@@ -20,6 +21,8 @@ function defaultState() {
     entries: [],
     weights: [],
     water: {},
+    fridge: [],
+    recipeCat: 'snidane',
   };
 }
 
@@ -201,8 +204,7 @@ function render() {
     </div></div>
     <div class="summary"><span>${t
       ? (left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ splnený ✓ <span class="muted">(+${-left} kcal)</span>`)
-      : 'Pridaj, čo si zjedol.'}</span>
-      <button class="round orange" data-act="add" aria-label="Pridať jedlo">${icon('plus', 20, 2.4)}</button></div>
+      : 'Pridaj, čo si zjedol.'}</span></div>
   </div>`;
 
   // Voda
@@ -235,11 +237,12 @@ function render() {
       <div class="list">${items.map(e => `<button class="entry" data-entry="${e.id}">
         ${e.thumb ? `<img src="${e.thumb}" alt="">` : ''}
         <div class="info"><div class="name">${esc(e.name)}</div>
-          <div class="small muted">${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} · ${r0(e.g)} g · B ${r0(e.p)} g</div></div>
+          <div class="small muted">${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} · ${e.g ? r0(e.g) + ' g' : '1 porcia'} · B ${r0(e.p)} g</div></div>
         <span class="score ${scoreClass(e.score)}">${e.score ?? '–'}</span>
         <span class="kc">${r0(e.kcal)}</span></button>`).join('')}</div></div>`;
   }
   html += weekStats();
+  html += recipesCard();
 
   $('#page').innerHTML = html;
 }
@@ -273,6 +276,98 @@ function weekStats() {
       <div><b>${streak()}</b><span>dní v rade</span></div>
     </div>
     ${tip ? `<p class="tip">${tip}</p>` : ''}</div>`;
+}
+
+// ---------- Recepty zo Športovej kuchárky ----------
+// Kuchárka je platený obsah, preto nie je v (verejnom) repozitári – načítava sa zo súboru do tohto zariadenia.
+let BOOK = null;
+try { BOOK = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch { BOOK = null; }
+let recipeLimit = 5;
+
+// Koľko požiadaviek receptu máš doma (požiadavka = skupina alternatív, stačí jedna).
+function matchRecipe(r, have) {
+  const missing = r.req.filter(alts => !alts.some(a => have.has(a) || (a === 'ovocie' && [...have].some(h => FRUITS.has(h)))));
+  return { r, missing, have: r.req.length - missing.length };
+}
+const FRUITS = new Set(['banan', 'jablko', 'bobule', 'citrusy', 'susene', 'ovocie']);
+
+function chipLabel(id) { return BOOK?.chips.find(c => c.id === id)?.label.split(' (')[0] || id; }
+
+function recipesCard() {
+  if (!BOOK) {
+    return `<div class="card"><h3>Čo si uvarím?</h3>
+      <p class="small muted" style="margin-bottom:12px">Načítaj súbor <b>kucharka.json</b> (je na tvojom Google Disku) – recepty sa uložia len do tohto zariadenia.</p>
+      <button class="btn primary" data-act="book-import">Načítať kuchárku</button></div>`;
+  }
+  const cats = BOOK.cats.filter(c => BOOK.recipes.some(r => r.cat === c.id));
+  if (!cats.some(c => c.id === S.recipeCat)) S.recipeCat = cats[0]?.id;
+  const have = new Set(S.fridge);
+  let html = `<div class="card"><h3>Čo si uvarím?</h3>
+    <div class="seg scroll">${cats.map(c => `<button data-rcat="${c.id}" class="${c.id === S.recipeCat ? 'on' : ''}">${c.label}</button>`).join('')}</div>
+    <button class="fridge" data-act="fridge"><span><b>Čo mám doma</b><span class="small muted">${have.size ? S.fridge.map(chipLabel).join(', ') : 'Naklikaj suroviny'}</span></span>${icon('right', 18, 2.2)}</button>`;
+  if (!have.size) return html + '</div>';
+  const list = BOOK.recipes.filter(r => r.cat === S.recipeCat && r.req.length)
+    .map(r => matchRecipe(r, have))
+    .filter(m => m.missing.length <= 2 && m.have >= Math.min(2, m.r.req.length))
+    .sort((a, b) => a.missing.length - b.missing.length || b.have - a.have);
+  if (!list.length) return html + '<div class="empty">Z toho, čo máš, nič nevyšlo. Pridaj ešte nejakú surovinu.</div></div>';
+  html += `<div class="list">${list.slice(0, recipeLimit).map(m => `<button class="recipe" data-recipe="${m.r.id}">
+      <div class="info"><div class="name">${esc(m.r.title)}</div>
+        <div class="small muted">${[m.r.time && m.r.time + ' min', m.r.kcal && r0(m.r.kcal) + ' kcal', m.r.p && 'B ' + r0(m.r.p) + ' g'].filter(Boolean).join(' · ')}</div>
+        ${m.missing.length ? `<div class="miss">Chýba: ${m.missing.map(a => chipLabel(a[0])).join(', ')}</div>` : '<div class="ok">Máš všetko</div>'}</div>
+      ${icon('right', 16, 2.2)}</button>`).join('')}</div>
+    ${list.length > recipeLimit ? `<button class="btn" data-act="more-recipes" style="margin-top:10px">Ďalšie (${list.length - recipeLimit})</button>` : ''}</div>`;
+  return html;
+}
+
+function openFridge() {
+  const groups = [...new Set(BOOK.chips.map(c => c.group))];
+  const have = new Set(S.fridge);
+  openSheet('Čo mám doma', `
+    <p class="small muted" style="margin-bottom:12px">Soľ, korenie, olej a vodu berieme, že máš.</p>
+    ${groups.map(g => `<h3 class="sub-h" style="margin-top:14px">${g}</h3><div class="chips">${BOOK.chips.filter(c => c.group === g).map(c =>
+      `<button class="chip-btn ${have.has(c.id) ? 'on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}</div>`).join('')}
+    <div class="grid2" style="margin-top:18px"><button class="btn" data-act="fridge-clear">Vymazať</button><button class="btn primary" data-act="fridge-done">Hotovo</button></div>
+  `);
+}
+
+function openRecipe(id) {
+  const r = BOOK.recipes.find(x => x.id === Number(id));
+  if (!r) return;
+  const have = new Set(S.fridge);
+  const meta = [r.time && r.time + ' min', r.diff, r.prep && 'Meal prep', r.portions > 1 && `recept na ${r.portions} porcie`].filter(Boolean).join(' · ');
+  openSheet(r.title, `
+    ${meta ? `<p class="small muted" style="margin:-8px 0 12px">${esc(meta)}</p>` : ''}
+    ${r.kcal ? `<div class="ai-sum"><div class="grid3">
+      <div><b>${r0(r.kcal)}</b><div class="lbl">kcal / porcia</div></div>
+      <div><b>${r0(r.p)} g</b><div class="lbl">bielkoviny</div></div>
+      <div><b>${r0(r.c)}/${r0(r.f)}</b><div class="lbl">sach./tuky g</div></div></div></div>` : ''}
+    <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
+    <div class="ing">${r.ing.map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div>
+    ${r.req.some(a => !a.some(x => have.has(x))) ? `<p class="miss" style="margin-top:8px">Chýba: ${r.req.filter(a => !a.some(x => have.has(x) || (x === 'ovocie' && [...have].some(h => FRUITS.has(h))))).map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
+    <h3 class="sub-h">Postup</h3>
+    <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}
+  `);
+}
+
+function eatRecipe(id) {
+  const r = BOOK.recipes.find(x => x.id === Number(id));
+  if (!r?.kcal) return;
+  addEntries([{ name: r.title, g: 0, kcal: r.kcal, p: r.p, c: r.c, f: r.f, fib: r.fib || 0, score: 8 }], 'kucharka');
+}
+
+async function importBook(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.recipes) || !Array.isArray(data.chips)) throw new Error();
+    localStorage.setItem(BOOK_KEY, JSON.stringify(data));
+    BOOK = data;
+    render();
+    toast(`Kuchárka načítaná: ${data.recipes.length} receptov`);
+  } catch {
+    toast('Toto nie je súbor kuchárky.');
+  }
 }
 
 function streak() {
@@ -634,6 +729,12 @@ function addEntries(list, src) {
 function openEntry(id, again = false) {
   const e = S.entries.find(x => x.id === id);
   if (!e) return;
+  if (!e.g) {
+    openSheet(e.name, `<p class="small muted" style="margin-bottom:14px">1 porcia · ${r0(e.kcal)} kcal · B ${r0(e.p)} g · S ${r0(e.c)} g · T ${r0(e.f)} g</p>
+      <button class="btn danger" id="e-del">Zmazať</button>`);
+    $('#e-del').onclick = () => { S.entries = S.entries.filter(x => x.id !== id); save(); closeSheet(); render(); toast('Zmazané'); };
+    return;
+  }
   const per = perGramFromEntry(e);
   openSheet(e.name, `
     <label class="field">Množstvo (g)<input class="input" id="e-g" type="number" inputmode="decimal" value="${r0(e.g)}"></label>
@@ -707,6 +808,10 @@ function openProfile() {
     <button class="btn" id="key-save" style="margin-top:8px">Uložiť kľúč</button>
     <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
 
+    <h3 class="sub-h">Športová kuchárka</h3>
+    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Načítaná: ${BOOK.recipes.length} receptov.` : 'Zatiaľ nenačítaná.'}</p>
+    <button class="btn" data-act="book-import">${BOOK ? 'Načítať novšiu verziu' : 'Načítať kuchárku'}</button>
+
     <h3 class="sub-h">Záloha</h3>
     <div class="grid2"><button class="btn" id="exp">Export</button><button class="btn" id="imp">Import</button></div>
     <button class="btn danger" id="wipe" style="margin-top:10px">Zmazať všetky dáta</button>
@@ -765,6 +870,18 @@ document.addEventListener('click', ev => {
   else if (d.drink) addWater(Number(d.drink));
   else if (d.entry) openEntry(d.entry);
   else if (d.recent) openEntry(d.recent, true);
+  else if (d.act === 'book-import') $('#book-input').click();
+  else if (d.act === 'fridge') openFridge();
+  else if (d.act === 'fridge-clear') { S.fridge = []; save(); openFridge(); }
+  else if (d.act === 'fridge-done') { closeSheet(); recipeLimit = 5; render(); }
+  else if (d.act === 'more-recipes') { recipeLimit += 10; render(); }
+  else if (d.chip) {
+    S.fridge = S.fridge.includes(d.chip) ? S.fridge.filter(x => x !== d.chip) : [...S.fridge, d.chip];
+    save();
+    t.classList.toggle('on');
+  } else if (d.rcat) { S.recipeCat = d.rcat; recipeLimit = 5; save(); render(); }
+  else if (d.recipe) openRecipe(d.recipe);
+  else if (d.eat) eatRecipe(d.eat);
   else if (d.wdel) {
     S.weights = S.weights.filter(w => w.date !== d.wdel);
     save(); render(); openWeight();
@@ -791,6 +908,12 @@ $('#photo-input').addEventListener('change', async ev => {
   } catch (err) {
     toast(err.message);
   }
+});
+
+$('#book-input').addEventListener('change', ev => {
+  const file = ev.target.files[0];
+  ev.target.value = '';
+  if (file) importBook(file);
 });
 
 $('#import-input').addEventListener('change', async ev => {

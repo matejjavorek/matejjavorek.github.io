@@ -101,7 +101,7 @@ main { display: grid; gap: 12px; }
 .bar > i { display: block; height: 100%; border-radius: var(--r-pill); }
 .summary {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin-top: 14px; padding: 8px 8px 8px 14px; border-radius: var(--r-pill); background: var(--card2); font-size: 13px;
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--r-pill); background: var(--card2); font-size: 13px;
 }
 
 /* Voda a váha */
@@ -218,3 +218,33 @@ label.field { display: block; margin-bottom: 10px; font-size: 12px; font-weight:
 }
 .toast[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+/* Recepty */
+.seg { display: flex; background: var(--card2); border-radius: var(--r-pill); padding: 4px; gap: 4px; margin-bottom: 12px; }
+.seg.scroll { overflow-x: auto; scrollbar-width: none; }
+.seg.scroll::-webkit-scrollbar { display: none; }
+.seg button { flex: 1 0 auto; border: 0; background: none; padding: 8px 12px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.seg button.on { background: var(--orange); color: #fff; }
+.fridge {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
+  border: 0; border-radius: var(--r-row); padding: 12px 14px; margin-bottom: 10px; background: #ffede4; color: var(--ink);
+}
+.fridge > span { display: grid; min-width: 0; }
+.fridge .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fridge svg { color: var(--orange); }
+.recipe {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 10px 12px; border: 0; border-radius: var(--r-row); background: var(--soft); color: var(--ink);
+}
+.recipe .info { flex: 1; min-width: 0; }
+.recipe .name { font-weight: 700; }
+.recipe svg { color: var(--sub); }
+.ok, .miss { font-size: 12px; font-weight: 700; margin-top: 2px; }
+.ok { color: #15803d; }
+.miss { color: var(--orange-ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-btn { border: 0; border-radius: var(--r-pill); padding: 9px 14px; background: var(--soft); color: var(--ink); font-weight: 600; font-size: 14px; }
+.chip-btn.on { background: var(--orange); color: #fff; }
+.ing p { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.ing .ing-h { font-weight: 700; border: 0; padding-top: 10px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
