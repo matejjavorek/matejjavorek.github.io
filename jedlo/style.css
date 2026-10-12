@@ -248,3 +248,37 @@ label.field { display: block; margin-bottom: 10px; font-size: 12px; font-weight:
 .ing p { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .ing .ing-h { font-weight: 700; border: 0; padding-top: 10px; }
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+
+/* Sprievodca receptami */
+.sheet-head h2 { flex: 1; }
+#sheet-back[hidden] { display: none; }
+.cook-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+  border: 0; border-radius: var(--r-card); padding: 20px 18px; background: var(--orange); color: #fff;
+  box-shadow: 0 16px 36px rgba(255, 90, 26, 0.35);
+}
+.cook-hero > span { display: grid; gap: 4px; }
+.cook-hero b { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.cook-hero span span { font-size: 13px; opacity: .9; }
+.link-btn { border: 0; background: none; color: var(--g-sub); font-weight: 600; font-size: 13px; padding: 4px 0 0; text-align: center; }
+.meal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.meal-tile {
+  border: 0; border-radius: var(--r-card); padding: 26px 10px; background: var(--soft); color: var(--ink);
+  display: grid; justify-items: center; gap: 8px; font-size: 17px; font-weight: 800;
+}
+.meal-tile span { font-size: 40px; line-height: 1; }
+.meal-tile:active { background: #ffede4; }
+.sticky-cta { position: sticky; bottom: calc(-24px - env(safe-area-inset-bottom)); margin: 18px -16px calc(-24px - env(safe-area-inset-bottom)); padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(rgba(255,255,255,0), #fff 30%); }
+.rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rcard {
+  border: 0; padding: 0; border-radius: 18px; background: var(--soft); color: var(--ink); text-align: left;
+  display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+}
+.photo { display: block; aspect-ratio: 4 / 3; background: #fff; position: relative; overflow: hidden; }
+.photo img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; }
+.photo img.loaded { opacity: 1; }
+.photo.none::after { content: "🍽️"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px; opacity: .5; }
+.photo.big { border-radius: var(--r-card); aspect-ratio: 3 / 2; }
+.rinfo { display: grid; gap: 3px; padding: 10px 12px 12px; align-content: start; }
+.rinfo b { font-size: 14px; line-height: 1.25; }
+.rinfo .ok, .rinfo .miss { margin-top: 2px; }

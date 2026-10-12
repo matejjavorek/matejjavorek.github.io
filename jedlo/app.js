@@ -279,27 +279,40 @@ function weekStats() {
 }
 
 // ---------- Recepty zo Športovej kuchárky ----------
-// Kuchárka je platený obsah, preto je na (verejnom) webe len zašifrovaná (kucharka.bin).
-// Odomkne sa raz heslom; rozšifrovaná kópia ostane len v tomto zariadení.
+// Kuchárka je platený obsah, preto je na (verejnom) webe len zašifrovaná (kucharka.bin + kucharka-foto/*.bin).
+// Odomkne sa raz súkromným odkazom (#k=…); kľúč a rozšifrovaná kópia ostanú len v tomto zariadení.
 const PASS_KEY = 'jedlo.kucharka.heslo';
 let BOOK = null;
 try { BOOK = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch { BOOK = null; }
-let recipeLimit = 5;
+let cryptoKey = null;
+const photoUrls = new Map();
+
+const MEAL_TYPES = [
+  ['ranajky', 'Raňajky', ['snidane', 'predzapas'], '🍳'],
+  ['obed', 'Obed', ['hlavni'], '🍗'],
+  ['vecera', 'Večera', ['hlavni'], '🍝'],
+  ['snack', 'Snack', ['svaciny', 'dezerty'], '🥣'],
+];
+const FRUITS = new Set(['banan', 'jablko', 'bobule', 'citrusy', 'susene', 'ovocie']);
+
+async function deriveKey(password, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base,
+    { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+}
 
 async function decryptBook(password) {
   const res = await fetch('kucharka.bin', { cache: 'no-cache' });
   if (!res.ok) throw new Error('Kuchárku sa nepodarilo stiahnuť.');
   const buf = new Uint8Array(await res.arrayBuffer());
-  const salt = buf.slice(0, 16), iv = buf.slice(16, 28), data = buf.slice(28);
-  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base,
-    { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const key = await deriveKey(password, buf.slice(0, 16));
   let plain;
   try {
-    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(16, 28) }, key, buf.slice(28));
   } catch {
-    throw new Error('Nesprávne heslo.');
+    throw new Error('Tento kľúč nesedí.');
   }
+  cryptoKey = key;
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
@@ -316,10 +329,13 @@ async function unlockBook(password) {
   toast(`Kuchárka odomknutá: ${data.recipes.length} receptov`);
 }
 
+function storedPass() {
+  try { return localStorage.getItem(PASS_KEY) || ''; } catch { return ''; }
+}
+
 // Pri štarte potichu načítaj novšiu verziu kuchárky (napr. keď pribudnú recepty).
 async function refreshBook() {
-  let pass = '';
-  try { pass = localStorage.getItem(PASS_KEY) || ''; } catch { return; }
+  const pass = storedPass();
   if (!pass) return;
   try {
     const data = await decryptBook(pass);
@@ -327,73 +343,167 @@ async function refreshBook() {
   } catch { /* offline alebo bez zmeny */ }
 }
 
-// Koľko požiadaviek receptu máš doma (požiadavka = skupina alternatív, stačí jedna).
+// Súkromný odkaz …/jedlo/#k=KĽÚČ odomkne kuchárku jedným ťuknutím.
+async function unlockFromUrl() {
+  const m = location.hash.match(/[#&]k=([^&]+)/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try { await unlockBook(decodeURIComponent(m[1])); } catch (err) { toast(err.message); }
+}
+
+async function unlockFromClipboard() {
+  try {
+    const t = (await navigator.clipboard.readText()).trim();
+    const m = t.match(/[#&]k=([^&\s]+)/);
+    await unlockBook(decodeURIComponent(m ? m[1] : t));
+  } catch (err) {
+    toast(err?.message?.includes('kľúč') ? err.message : 'Najprv skopíruj svoj odkaz na kuchárku.');
+  }
+}
+
+async function photoUrl(id) {
+  if (photoUrls.has(id)) return photoUrls.get(id);
+  if (BOOK?.recipes.find(x => x.id === id)?.photo === false) return null;
+  if (!cryptoKey) {
+    const pass = storedPass();
+    if (!pass || !BOOK?.salt) return null;
+    cryptoKey = await deriveKey(pass, new Uint8Array(BOOK.salt.match(/../g).map(h => parseInt(h, 16))));
+  }
+  try {
+    const res = await fetch(`kucharka-foto/${id}.bin`);
+    if (!res.ok) return null;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, cryptoKey, buf.slice(12));
+    const url = URL.createObjectURL(new Blob([plain], { type: 'image/webp' }));
+    photoUrls.set(id, url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+// Doplní fotky do všetkých <img data-photo> v paneli.
+async function fillPhotos(root) {
+  for (const img of root.querySelectorAll('img[data-photo]')) {
+    const url = await photoUrl(Number(img.dataset.photo));
+    if (!img.isConnected) return;
+    if (url) { img.src = url; img.classList.add('loaded'); } else img.closest('.photo')?.classList.add('none');
+  }
+}
+
+function chipLabel(id) { return BOOK?.chips.find(c => c.id === id)?.label.split(' (')[0] || id; }
+
 function matchRecipe(r, have) {
   const missing = r.req.filter(alts => !alts.some(a => have.has(a) || (a === 'ovocie' && [...have].some(h => FRUITS.has(h)))));
   return { r, missing, have: r.req.length - missing.length };
 }
-const FRUITS = new Set(['banan', 'jablko', 'bobule', 'citrusy', 'susene', 'ovocie']);
-
-function chipLabel(id) { return BOOK?.chips.find(c => c.id === id)?.label.split(' (')[0] || id; }
 
 function recipesCard() {
   if (!BOOK) {
     return `<div class="card"><h3>Čo si uvarím?</h3>
-      <p class="small muted" style="margin-bottom:12px">Recepty zo Športovej kuchárky. Zadaj heslo – stačí raz.</p>
-      <form class="row" id="book-form"><input class="input" id="book-pass" type="password" autocomplete="off" placeholder="Heslo ku kuchárke" style="margin:0">
-        <button class="btn primary sm">Odomknúť</button></form></div>`;
+      <p class="small muted" style="margin-bottom:12px">Recepty zo Športovej kuchárky. Odomkneš ich raz – ťukni na svoj súkromný odkaz, alebo ho skopíruj a ťukni sem.</p>
+      <button class="btn primary" data-act="unlock-paste">Vložiť odkaz a odomknúť</button></div>`;
   }
-  const cats = BOOK.cats.filter(c => BOOK.recipes.some(r => r.cat === c.id));
-  if (!cats.some(c => c.id === S.recipeCat)) S.recipeCat = cats[0]?.id;
-  const have = new Set(S.fridge);
-  let html = `<div class="card"><h3>Čo si uvarím?</h3>
-    <div class="seg scroll">${cats.map(c => `<button data-rcat="${c.id}" class="${c.id === S.recipeCat ? 'on' : ''}">${c.label}</button>`).join('')}</div>
-    <button class="fridge all" data-act="all-recipes"><span><b>Všetky recepty</b><span class="small muted">${BOOK.recipes.length} receptov · hľadať podľa názvu</span></span>${icon('right', 18, 2.2)}</button>
-    <button class="fridge" data-act="fridge"><span><b>Čo mám doma</b><span class="small muted">${have.size ? S.fridge.map(chipLabel).join(', ') : 'Naklikaj suroviny'}</span></span>${icon('right', 18, 2.2)}</button>`;
-  if (!have.size) return html + '</div>';
-  const list = BOOK.recipes.filter(r => r.cat === S.recipeCat && r.req.length)
-    .map(r => matchRecipe(r, have))
-    .filter(m => m.missing.length <= 2 && m.have >= Math.min(2, m.r.req.length))
-    .sort((a, b) => a.missing.length - b.missing.length || b.have - a.have);
-  if (!list.length) return html + '<div class="empty">Z toho, čo máš, nič nevyšlo. Pridaj ešte nejakú surovinu.</div></div>';
-  html += `<div class="list">${list.slice(0, recipeLimit).map(m => `<button class="recipe" data-recipe="${m.r.id}">
-      <div class="info"><div class="name">${esc(m.r.title)}</div>
-        <div class="small muted">${[m.r.time && m.r.time + ' min', m.r.kcal && r0(m.r.kcal) + ' kcal', m.r.p && 'B ' + r0(m.r.p) + ' g'].filter(Boolean).join(' · ')}</div>
-        ${m.missing.length ? `<div class="miss">Chýba: ${m.missing.map(a => chipLabel(a[0])).join(', ')}</div>` : '<div class="ok">Máš všetko</div>'}</div>
-      ${icon('right', 16, 2.2)}</button>`).join('')}</div>
-    ${list.length > recipeLimit ? `<button class="btn" data-act="more-recipes" style="margin-top:10px">Ďalšie (${list.length - recipeLimit})</button>` : ''}</div>`;
-  return html;
+  return `<button class="cook-hero" data-act="cook">
+      <span><b>Čo si uvarím?</b><span>Raňajky, obed, večera alebo snack – z toho, čo máš doma.</span></span>
+      ${icon('right', 22, 2.4)}</button>
+    <button class="link-btn" data-act="all-recipes">Všetky recepty (${BOOK.recipes.length}) – hľadať podľa názvu</button>`;
 }
 
-function openFridge() {
+// ---------- Sprievodca: jedlo -> suroviny -> recepty -> recept ----------
+const wiz = { meal: null, back: null };
+
+function wizHead(title, back) {
+  wiz.back = back;
+  $('#sheet-title').textContent = title;
+  $('#sheet-back').hidden = !back;
+}
+
+function cookStart() {
+  openSheet('', '');
+  wizHead('Čo ideš jesť?', null);
+  $('#sheet-body').innerHTML = `<div class="meal-grid">${MEAL_TYPES.map(([k, l, , e]) =>
+    `<button class="meal-tile" data-meal="${k}"><span>${e}</span>${l}</button>`).join('')}</div>`;
+}
+
+function mealRecipes() {
+  const cats = MEAL_TYPES.find(m => m[0] === wiz.meal)[2];
+  return BOOK.recipes.filter(r => cats.includes(r.cat));
+}
+
+function cookFridge() {
+  wizHead('Čo máš doma?', cookStart);
   const groups = [...new Set(BOOK.chips.map(c => c.group))];
   const have = new Set(S.fridge);
-  openSheet('Čo mám doma', `
-    <p class="small muted" style="margin-bottom:12px">Soľ, korenie, olej a vodu berieme, že máš.</p>
+  $('#sheet-body').innerHTML = `
+    <p class="small muted" style="margin:-6px 0 6px">Ťukni na všetko, čo máš. Soľ, korenie, olej a vodu berieme, že máš.</p>
     ${groups.map(g => `<h3 class="sub-h" style="margin-top:14px">${g}</h3><div class="chips">${BOOK.chips.filter(c => c.group === g).map(c =>
       `<button class="chip-btn ${have.has(c.id) ? 'on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}</div>`).join('')}
-    <div class="grid2" style="margin-top:18px"><button class="btn" data-act="fridge-clear">Vymazať</button><button class="btn primary" data-act="fridge-done">Hotovo</button></div>
-  `);
+    <div class="sticky-cta"><button class="btn primary" data-act="cook-results" id="cook-go"></button></div>`;
+  updateCookCount();
 }
 
-function openRecipe(id) {
+function cookList() {
+  const have = new Set(S.fridge);
+  const list = mealRecipes().map(r => matchRecipe(r, have));
+  if (!have.size) return list.sort((a, b) => a.r.title.localeCompare(b.r.title, 'cs'));
+  return list.filter(m => m.missing.length <= 2 && m.have >= Math.min(2, m.r.req.length))
+    .sort((a, b) => a.missing.length - b.missing.length || b.have - a.have);
+}
+
+function updateCookCount() {
+  const btn = $('#cook-go');
+  if (!btn) return;
+  const n = cookList().length;
+  btn.textContent = S.fridge.length ? (n ? `Ukáž recepty (${n})` : 'Nič nevychádza – pridaj surovinu') : `Ukáž všetky (${n})`;
+  btn.disabled = S.fridge.length > 0 && !n;
+}
+
+function recipeCard(m, showMiss) {
+  const r = m.r;
+  return `<button class="rcard" data-recipe="${r.id}">
+    <span class="photo"><img data-photo="${r.id}" alt=""></span>
+    <span class="rinfo"><b>${esc(r.title)}</b>
+      <span class="small muted">${[r.time && r.time + ' min', r.kcal && r0(r.kcal) + ' kcal', r.p && 'B ' + r0(r.p) + ' g'].filter(Boolean).join(' · ')}</span>
+      ${showMiss ? (m.missing.length ? `<span class="miss">Chýba: ${m.missing.map(a => chipLabel(a[0])).join(', ')}</span>` : '<span class="ok">Máš všetko</span>') : ''}</span>
+  </button>`;
+}
+
+function cookResults() {
+  const meal = MEAL_TYPES.find(m => m[0] === wiz.meal)[1];
+  wizHead(meal, cookFridge);
+  const list = cookList();
+  const showMiss = S.fridge.length > 0;
+  $('#sheet-body').innerHTML = list.length
+    ? `<div class="rgrid">${list.map(m => recipeCard(m, showMiss)).join('')}</div>`
+    : '<div class="empty">Nič nevychádza. Vráť sa a pridaj surovinu.</div>';
+  fillPhotos($('#sheet-body'));
+}
+
+function openRecipe(id, back = null) {
   const r = BOOK.recipes.find(x => x.id === Number(id));
   if (!r) return;
   const have = new Set(S.fridge);
+  if ($('#sheet-bg').hidden) openSheet('', '');
+  wizHead(r.title, back);
   const meta = [r.time && r.time + ' min' + (r.extra ? ' ' + r.extra : ''), r.diff, r.prep && 'Meal prep', r.portions > 1 && `recept na ${r.portions} porcie`].filter(Boolean).join(' · ');
-  openSheet(r.title, `
-    ${meta ? `<p class="small muted" style="margin:-8px 0 12px">${esc(meta)}</p>` : ''}
+  const miss = have.size ? matchRecipe(r, have).missing : [];
+  $('#sheet-body').innerHTML = `
+    <div class="photo big"><img data-photo="${r.id}" alt="${esc(r.title)}"></div>
+    ${meta ? `<p class="small muted" style="margin:10px 0 12px">${esc(meta)}</p>` : ''}
     ${r.kcal ? `<div class="ai-sum"><div class="grid3">
       <div><b>${r0(r.kcal)}</b><div class="lbl">kcal / porcia</div></div>
       <div><b>${r0(r.p)} g</b><div class="lbl">bielkoviny</div></div>
       <div><b>${r0(r.c)}/${r0(r.f)}</b><div class="lbl">sach./tuky g</div></div></div></div>` : ''}
     <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
     <div class="ing">${r.ing.map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div>
-    ${have.size && r.req.some(a => !a.some(x => have.has(x))) ? `<p class="miss" style="margin-top:8px">Chýba: ${r.req.filter(a => !a.some(x => have.has(x) || (x === 'ovocie' && [...have].some(h => FRUITS.has(h))))).map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
+    ${miss.length ? `<p class="miss" style="margin-top:8px">Chýba ti: ${miss.map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
     <h3 class="sub-h">Postup</h3>
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
-    ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}
-  `);
+    ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}`;
+  $('#sheet-body').scrollTop = 0;
+  $('.sheet').scrollTop = 0;
+  fillPhotos($('#sheet-body'));
 }
 
 function eatRecipe(id) {
@@ -402,25 +512,27 @@ function eatRecipe(id) {
   addEntries([{ name: r.title, g: 0, kcal: r.kcal, p: r.p, c: r.c, f: r.f, fib: r.fib || 0, score: 8 }], 'kucharka');
 }
 
-function openAllRecipes(q = '') {
+function openAllRecipes() {
+  openSheet('', '');
+  wizHead('Všetky recepty', null);
   const cats = BOOK.cats.filter(c => BOOK.recipes.some(r => r.cat === c.id));
-  openSheet('Všetky recepty', `
-    <input class="input" id="recipe-q" type="search" placeholder="Hľadať (napr. kuře, kaše, losos)" value="${esc(q)}" autocomplete="off">
-    <div id="recipe-results" style="margin-top:12px"></div>`);
+  $('#sheet-body').innerHTML = `
+    <input class="input" id="recipe-q" type="search" placeholder="Hľadať (napr. kuře, kaše, losos)" autocomplete="off">
+    <div id="recipe-results" style="margin-top:12px"></div>`;
   const draw = () => {
     const nq = norm($('#recipe-q').value.trim());
     const hit = r => !nq || norm(r.title + ' ' + r.ing.join(' ')).includes(nq);
     $('#recipe-results').innerHTML = cats.map(c => {
       const rs = BOOK.recipes.filter(r => r.cat === c.id && hit(r));
-      return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3><div class="list">${rs.map(r =>
-        `<button class="recipe" data-recipe="${r.id}"><div class="info"><div class="name">${esc(r.title)}</div>
-          <div class="small muted">${[r.time && r.time + ' min', r.kcal && r0(r.kcal) + ' kcal', r.p && 'B ' + r0(r.p) + ' g'].filter(Boolean).join(' · ')}</div></div>${icon('right', 16, 2.2)}</button>`).join('')}</div>` : '';
+      return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3>
+        <div class="rgrid">${rs.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '';
     }).join('') || '<div class="empty">Nič sa nenašlo.</div>';
+    fillPhotos($('#recipe-results'));
   };
-  $('#recipe-q').addEventListener('input', draw);
+  let t;
+  $('#recipe-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 200); });
   draw();
 }
-
 
 function streak() {
   const dates = new Set(S.entries.map(e => e.date));
@@ -632,6 +744,8 @@ let pendingPhoto = null; // { dataUrl, base64, thumb }
 
 function openSheet(title, html) {
   $('#sheet-title').textContent = title;
+  $('#sheet-back').hidden = true;
+  wiz.back = null;
   $('#sheet-body').innerHTML = html;
   $('#sheet-bg').hidden = false;
 }
@@ -861,7 +975,7 @@ function openProfile() {
     <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
 
     <h3 class="sub-h">Športová kuchárka</h3>
-    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá – odomkneš ju heslom na hlavnej stránke.'}</p>
+    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá – odomkneš ju svojím súkromným odkazom.'}</p>
     ${BOOK ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
 
     <h3 class="sub-h">Záloha</h3>
@@ -928,16 +1042,19 @@ document.addEventListener('click', ev => {
     try { localStorage.removeItem(BOOK_KEY); localStorage.removeItem(PASS_KEY); } catch { /* nič */ }
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
-  else if (d.act === 'fridge') openFridge();
-  else if (d.act === 'fridge-clear') { S.fridge = []; save(); openFridge(); }
-  else if (d.act === 'fridge-done') { closeSheet(); recipeLimit = 5; render(); }
-  else if (d.act === 'more-recipes') { recipeLimit += 10; render(); }
+  else if (d.act === 'cook') cookStart();
+  else if (d.act === 'cook-results') cookResults();
+  else if (d.act === 'unlock-paste') unlockFromClipboard();
+  else if (d.meal) { wiz.meal = d.meal; cookFridge(); }
   else if (d.chip) {
     S.fridge = S.fridge.includes(d.chip) ? S.fridge.filter(x => x !== d.chip) : [...S.fridge, d.chip];
     save();
     t.classList.toggle('on');
-  } else if (d.rcat) { S.recipeCat = d.rcat; recipeLimit = 5; save(); render(); }
-  else if (d.recipe) openRecipe(d.recipe);
+    updateCookCount();
+  } else if (d.recipe) {
+    const from = $('#sheet-title').textContent === 'Všetky recepty' ? null : cookResults;
+    openRecipe(d.recipe, from);
+  }
   else if (d.eat) eatRecipe(d.eat);
   else if (d.wdel) {
     S.weights = S.weights.filter(w => w.date !== d.wdel);
@@ -947,6 +1064,7 @@ document.addEventListener('click', ev => {
 
 $('#open-profile').onclick = openProfile;
 $('#close-sheet').onclick = closeSheet;
+$('#sheet-back').onclick = () => wiz.back?.();
 $('#sheet-bg').addEventListener('click', ev => { if (ev.target.id === 'sheet-bg') closeSheet(); });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#sheet-bg').hidden) closeSheet(); });
 
@@ -967,20 +1085,6 @@ $('#photo-input').addEventListener('change', async ev => {
   }
 });
 
-document.addEventListener('submit', async ev => {
-  if (ev.target.id !== 'book-form') return;
-  ev.preventDefault();
-  const pass = $('#book-pass').value.trim();
-  if (!pass) return toast('Zadaj heslo.');
-  const btn = ev.target.querySelector('button');
-  btn.disabled = true;
-  try {
-    await unlockBook(pass);
-  } catch (err) {
-    btn.disabled = false;
-    toast(err.message);
-  }
-});
 
 $('#import-input').addEventListener('change', async ev => {
   const file = ev.target.files[0];
@@ -1014,5 +1118,5 @@ if ('serviceWorker' in navigator) {
 }
 
 render();
-refreshBook();
+unlockFromUrl().then(refreshBook);
 if (!S.profile.age) openProfile();

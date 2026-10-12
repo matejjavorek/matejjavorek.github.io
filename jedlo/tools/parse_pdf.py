@@ -13,7 +13,7 @@ ING_START = re.compile(r'^(\d|[½¼¾]|Recept na|Na \d|Ingredience|Hrst|Špetk|S
 def pages_of(pdf):
     txt = subprocess.run(['pdftotext', pdf, '-'], capture_output=True, text=True).stdout
     out = []
-    for p in txt.split('\f'):
+    for idx, p in enumerate(txt.split('\f')):
         lines = [l.strip() for l in p.split('\n')]
         # Makrá rozdelené na viac riadkov spoj do jedného.
         for i, l in enumerate(lines):
@@ -30,14 +30,14 @@ def pages_of(pdf):
         for i, l in enumerate(clean):
             if l == 'honzatobiska.com' and i and re.fullmatch(r'\d{1,3}', clean[i - 1]):
                 pno = int(clean[i - 1])
-        out.append((pno, lines))
+        out.append((pno, lines, (pdf, idx + 1)))
     return out
 
 def num(x): return float(x.replace(',', '.'))
 
 def parse_pages(pages):
     recs, cur, cat = [], None, None
-    for pno, lines in pages:
+    for pno, lines, src in pages:
         body = [l for l in lines if not NOISE.match(l)]
         if not body: continue
         head = body[0] + (' ' + body[1] if len(body) > 1 else '')
@@ -57,12 +57,13 @@ def parse_pages(pages):
             i = 0
             while i < len(body) and not ING_START.match(body[i]) and not body[i].startswith('Postup') and len(title) < 3:
                 title.append(body[i]); i += 1
-            cur = {'title': ' '.join(title), 'cat': cat, 'page': pno, 'meta': meta, 'ing': [], 'steps': [], 'mac': None}
+            cur = {'title': ' '.join(title), 'cat': cat, 'page': pno, 'meta': meta, 'ing': [], 'steps': [], 'mac': None, 'src': [src]}
             recs.append(cur)
             rest = body[i:]
         else:
             if cur is None or cur.get('done'): continue
             cur['meta'] += meta
+            cur['src'].append(src)
             rest = body
         mode = 'steps' if cur['ing'] and not starts_new and rest and rest[0].startswith('Postup') else ('steps' if cur.get('in_steps') else 'ing')
         for l in rest:
@@ -100,7 +101,7 @@ def parse_pages(pages):
             'portions': int(por.group(1)) if por else 1,
             'kcal': num(m.group(1)) if m else None, 'p': num(m.group(2)) if m else None, 'c': num(m.group(3)) if m else None,
             'f': num(m.group(4)) if m else None, 'fib': num(m.group(5)) if m else None,
-            'ing': merged, 'steps': steps, 'req': requirements('\n'.join(merged)),
+            'ing': merged, 'steps': steps, 'req': requirements('\n'.join(merged)), 'src': r['src'],
         })
     return out
 
@@ -117,12 +118,12 @@ if __name__ == '__main__':
         allpages += pages_of(pdf)
     # Strany bez čísla dostanú číslo podľa predošlej strany.
     last = 0
-    for i, (p, ls) in enumerate(allpages):
-        if p is None: allpages[i] = (last + 1, ls)
+    for i, (p, ls, src) in enumerate(allpages):
+        if p is None: allpages[i] = (last + 1, ls, src)
         last = allpages[i][0]
     # zoradenie podľa čísla strany; strany bez čísla nechaj za predchádzajúcou
     recs = parse_pages(allpages)
-    starts = [(p, SECTION[l[0]]) for p, ls in allpages for l in [[x for x in ls if not NOISE.match(x)]] if l and l[0] in SECTION]
+    starts = [(p, SECTION[l[0]]) for p, ls, _ in allpages for l in [[x for x in ls if not NOISE.match(x)]] if l and l[0] in SECTION]
     seen, final = set(), []
     for r in recs:
         if r['cat'] is None: r['cat'] = cat_for_page(r['page'], starts) or 'snidane'
@@ -130,6 +131,8 @@ if __name__ == '__main__':
         if key in seen: continue
         seen.add(key); final.append(r)
     for i, r in enumerate(final): r['id'] = i + 1
+    # Zdroj strán (na fotky) ide do samostatného súboru, nie do kuchárky.
+    json.dump({r['id']: r.pop('src') for r in final}, open(sys.argv[1].replace('.json', '.src.json'), 'w'))
     data = {'name': 'Športová kuchárka 2.0', 'version': 2,
             'chips': [{'id': c[0], 'label': c[1], 'group': c[2]} for c in CHIPS],
             'cats': [{'id': c[0], 'label': c[1]} for c in CATS], 'recipes': final}
