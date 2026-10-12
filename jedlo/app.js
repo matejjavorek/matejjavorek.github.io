@@ -158,14 +158,25 @@ function render() {
 }
 
 // ---------- Dnes ----------
-function ring(value, target, color) {
-  const R = 52, C = 2 * Math.PI * R;
+function ring(value, target, c1, c2, id) {
+  const size = 132, sw = 13, R = (size - sw) / 2, C = 2 * Math.PI * R, c = size / 2;
   const pct = target ? Math.min(value / target, 1) : 0;
-  return `<svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true">
-    <circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--card2)" stroke-width="12"/>
-    <circle cx="60" cy="60" r="${R}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round"
-      stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg>`;
+  const dash = `${(C * pct).toFixed(1)} ${C.toFixed(1)}`;
+  const arc = extra => `<circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="url(#${id})" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${dash}" ${extra}/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" aria-hidden="true"><defs>
+    <linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
+    <filter id="${id}b" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter></defs>
+    <circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="var(--card2)" stroke-width="${sw}"/>
+    ${pct > 0 ? arc(`filter="url(#${id}b)" opacity="0.6"`) + arc('') : ''}</svg>`;
 }
+
+const ICON = {
+  camera: '<path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
+  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+};
+const icon = (k, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
 function bar(label, value, target, color, unit = 'g') {
   const pct = target ? Math.min((value / target) * 100, 100) : 0;
@@ -186,8 +197,8 @@ function renderToday() {
   }
 
   const left = t ? r0(t.kcal - tot.kcal) : null;
-  html += `<div class="card"><div class="ring-wrap">
-    <div class="ring">${ring(tot.kcal, t?.kcal, 'var(--kcal)')}
+  html += `<div class="card dark"><div class="ring-wrap">
+    <div class="ring">${ring(tot.kcal, t?.kcal, '#1fd67a', '#b6ff5a', 'rk')}
       <div class="center"><span class="big">${r0(tot.kcal)}</span><span class="small muted">${t ? 'z ' + t.kcal + ' kcal' : 'kcal'}</span></div></div>
     <div class="bars">
       ${bar('Bielkoviny', tot.p, t?.p, 'var(--p)')}
@@ -195,12 +206,12 @@ function renderToday() {
       ${bar('Tuky', tot.f, t?.f, 'var(--f)')}
       ${bar('Vláknina', tot.fib, t?.fib, 'var(--fib)')}
     </div></div>
-    ${t ? `<p class="small muted" style="margin:12px 0 0">${left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ kalórií splnený ✅ (+${-left} kcal)`}
+    ${t ? `<p class="summary">${left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ kalórií splnený ✅ (+${-left} kcal)`}
       ${tot.score ? ` · Zdravosť dňa: <span class="score ${scoreClass(tot.score)}">${r1(tot.score)}</span>` : ''}</p>` : ''}
   </div>`;
 
   html += `<div class="card"><div class="water">
-    <span style="font-size:22px">💧</span>
+    <span class="ico">${icon('drop')}</span>
     <div style="flex:1">${bar('Voda', water, t?.water, 'var(--water)', 'ml')}</div>
     <button class="btn sm" data-water="-250" aria-label="Uber 250 ml">−</button>
     <button class="btn sm" data-water="250" aria-label="Pridaj 250 ml">+</button>
@@ -209,17 +220,17 @@ function renderToday() {
   for (const [m, label] of MEALS) {
     const items = S.entries.filter(e => e.date === curDate && e.meal === m).sort((a, b) => a.ts - b.ts);
     const kc = items.reduce((s, e) => s + e.kcal, 0);
-    html += `<div class="card"><div class="meal-head"><h3>${label}</h3><span class="muted small">${r0(kc)} kcal</span></div>`;
+    html += `<div class="card"><div class="meal-head"><h3>${label}</h3><span class="muted small">${r0(kc)} kcal</span></div><div class="meal-list">`;
     if (!items.length) html += `<div class="empty">Nič zapísané · <a href="#" data-add-meal="${m}">pridať</a></div>`;
     for (const e of items) {
-      html += `<button class="entry list-item" data-entry="${e.id}" style="border-bottom:0">
+      html += `<button class="entry" data-entry="${e.id}">
         ${e.thumb ? `<img src="${e.thumb}" alt="">` : ''}
         <div class="info"><div class="name">${esc(e.name)}</div>
           <div class="small muted">${r0(e.g)} g · B ${r0(e.p)} · S ${r0(e.c)} · T ${r0(e.f)}</div></div>
         <span class="score ${scoreClass(e.score)}">${e.score ?? '–'}</span>
         <span class="kc">${r0(e.kcal)}</span></button>`;
     }
-    html += '</div>';
+    html += '</div></div>';
   }
   el.innerHTML = html;
 }
@@ -375,15 +386,15 @@ function openAdd(meal) {
   openSheet('Pridať jedlo', `
     ${mealSelect(addMeal)}
     <div class="big-actions">
-      <button class="btn primary" id="act-photo"><span>📷</span>Odfotiť jedlo</button>
-      <button class="btn" id="act-text"><span>✍️</span>Opísať textom</button>
+      <button class="btn primary" id="act-photo">${icon('camera')}Odfotiť jedlo</button>
+      <button class="btn" id="act-text">${icon('pen')}Opísať textom</button>
     </div>
-    <input class="input" id="food-search" type="search" placeholder="🔎 Hľadať potravinu (ryža, vajce, tvaroh…)" autocomplete="off">
+    <input class="input" id="food-search" type="search" placeholder="Hľadať potravinu (ryža, vajce, tvaroh…)" autocomplete="off">
     <div id="search-results"></div>
-    ${recent.length ? `<h3 style="margin:16px 0 4px;font-size:14px">⏱ Naposledy jedené</h3>
+    ${recent.length ? `<h3 class="sub-h">Naposledy jedené</h3>
       ${recent.map(e => `<button class="list-item" data-recent="${e.id}"><span>${esc(e.name)}</span>
         <span class="muted small">${r0(e.g)} g · ${r0(e.kcal)} kcal</span></button>`).join('')}` : ''}
-    <div style="margin-top:16px"><button class="btn" id="act-custom">➕ Vlastná položka</button></div>
+    <div style="margin-top:16px"><button class="btn" id="act-custom">${icon('plus', 18)}Vlastná položka</button></div>
   `);
 }
 
@@ -510,21 +521,21 @@ function showAIResult(res) {
     openSheet(res.meal_name || 'Výsledok', `
       ${mealSelect(addMeal)}
       ${pendingPhoto ? `<img class="preview" src="${pendingPhoto.dataUrl}" alt="">` : ''}
-      <div class="card" style="background:var(--card2)">
+      <div class="ai-sum">
         <div class="grid3">
-          <div><b style="font-size:20px">${r0(tot.kcal)}</b><div class="small muted">kcal</div></div>
-          <div><b style="font-size:20px">${r0(tot.p)} g</b><div class="small muted">bielkoviny</div></div>
-          <div><b style="font-size:20px">${r0(tot.c)}/${r0(tot.f)}</b><div class="small muted">sach./tuky g</div></div>
+          <div><b>${r0(tot.kcal)}</b><div class="lbl">kcal</div></div>
+          <div><b>${r0(tot.p)} g</b><div class="lbl">bielkoviny</div></div>
+          <div><b>${r0(tot.c)}/${r0(tot.f)}</b><div class="lbl">sach./tuky g</div></div>
         </div>
         <p class="small" style="margin:10px 0 0">${esc(res.note)}</p>
-        <p class="small muted" style="margin:6px 0 0">Istota AI: ${esc(conf)} · uprav gramy, ak nesedia.</p>
+        <p class="small" style="margin:6px 0 0;opacity:.85">Istota AI: ${esc(conf)} · uprav gramy, ak nesedia.</p>
       </div>
       ${items.map((it, i) => {
         const k = it.g / it.base;
         return `<div class="ai-item"><div class="row">
           <input class="input" data-ai-name="${i}" value="${esc(it.name)}" style="flex:1">
           <input class="input grams" data-ai-g="${i}" type="number" inputmode="decimal" value="${r0(it.g)}" aria-label="gramy">
-          <button class="icon-btn" data-ai-del="${i}" aria-label="Odstrániť" style="font-size:16px">✕</button></div>
+          <button class="icon-btn" data-ai-del="${i}" aria-label="Odstrániť" style="background:#fff">✕</button></div>
           <div class="small muted" style="margin-top:6px">${r0(it.kcal * k)} kcal · B ${r0(it.p * k)} · S ${r0(it.c * k)} · T ${r0(it.f * k)}
           · <span class="score ${scoreClass(it.score)}">${it.score}</span></div></div>`;
       }).join('')}
@@ -632,11 +643,11 @@ function renderStats() {
     const h = (x.kcal / maxV) * (H - 18);
     const ok = t && x.kcal >= t.kcal * 0.9;
     return `<rect x="${pad + i * bw + bw * 0.15}" y="${H - 14 - h}" width="${bw * 0.7}" height="${h}" rx="3"
-      fill="${ok ? 'var(--kcal)' : 'var(--c)'}" opacity="${x.n ? 1 : 0.25}"/>` +
+      fill="${ok ? '#1fd67a' : 'var(--orange)'}" opacity="${x.n ? 1 : 0.25}"/>` +
       (statDays === 7 ? `<text x="${pad + i * bw + bw / 2}" y="${H - 2}" font-size="10" text-anchor="middle" fill="var(--muted)">${parseDay(x.d).toLocaleDateString('sk-SK', { weekday: 'narrow' })}</text>` : '');
   }).join('');
   const ty = t ? H - 14 - (t.kcal / maxV) * (H - 18) : null;
-  html += `<div class="card chart"><h3>Kalórie</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf kalórií po dňoch">${bars}
+  html += `<div class="card dark chart"><h3>Kalórie</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf kalórií po dňoch">${bars}
     ${t ? `<line x1="0" x2="${W}" y1="${ty}" y2="${ty}" stroke="var(--text)" stroke-dasharray="4 4" opacity=".5"/>` : ''}</svg>
     <p class="small muted" style="margin:6px 0 0">Prerušovaná čiara = cieľ ${t ? t.kcal + ' kcal' : ''}. Zelená = splnené (≥ 90 %).</p></div>`;
 
@@ -668,7 +679,7 @@ function renderStats() {
 
   // Návyky – tipy
   const tips = habitTips({ t, logged, inRange, days, byMeal, totK, pHit, kHit, scoreAll });
-  html += `<div class="card"><h3>💡 Návyky a tipy</h3><ul class="tips">${tips.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+  html += `<div class="card"><h3>Návyky a tipy</h3><ul class="tips">${tips.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
 
   el.innerHTML = html;
 }
@@ -737,7 +748,7 @@ function renderWeight() {
     const span = Math.max(1, (t1 - t0) / 864e5);
     const xy = p => [P + ((parseDay(p.date) - t0) / 864e5 / span) * (W - P - 6), 6 + (1 - (p.kg - min) / (max - min)) * (H - 26)];
     const path = pts.map((p, i) => (i ? 'L' : 'M') + xy(p).map(n => n.toFixed(1)).join(' ')).join(' ');
-    html += `<div class="card chart"><h3>Priebeh</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf váhy">
+    html += `<div class="card dark chart"><h3>Priebeh</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf váhy">
       <text x="0" y="12" font-size="10" fill="var(--muted)">${r1(max)}</text>
       <text x="0" y="${H - 20}" font-size="10" fill="var(--muted)">${r1(min)}</text>
       <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
