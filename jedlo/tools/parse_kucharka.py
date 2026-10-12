@@ -3,7 +3,7 @@ import re, json, sys
 
 # Čipy surovín: id, slovenský názov, skupina, regex na české tvary.
 CHIPS = [
-  ('vajcia', 'Vajcia', 'Mliečne a vajcia', r'vejc|vajíč|vaječ|žloutk|bílk'),
+  ('vajcia', 'Vajcia', 'Mliečne a vajcia', r'vejc|vejce|vajec|vajíč|vaječ|žloutk|bílk'),
   ('mlieko', 'Mlieko', 'Mliečne a vajcia', r'\bmlék|\bmléka|\bmlékem|kefír'),
   ('jogurt', 'Jogurt (biely/grécky)', 'Mliečne a vajcia', r'jogurt'),
   ('skyr', 'Skyr', 'Mliečne a vajcia', r'skyr'),
@@ -14,7 +14,7 @@ CHIPS = [
   ('halloumi', 'Halloumi', 'Mliečne a vajcia', r'halloumi'),
   ('ricotta', 'Ricotta / krémový syr', 'Mliečne a vajcia', r'ricott|lučin|žervé|cream cheese|philadelph|mascarpon'),
   ('maslo', 'Maslo', 'Mliečne a vajcia', r'(?<!arašídové )(?<!kešu )(?<!mandlové )(?<!ořechové )(?<!arašídového )(?<!kešu )\bmásl'),
-  ('kuracie', 'Kuracie mäso', 'Mäso a ryby', r'kuř'),
+  ('kuracie', 'Kuracie mäso', 'Mäso a ryby', r'kuřec|kuřat|kuře\b|kuřete|kuřecí'),
   ('morcacie', 'Morčacie mäso', 'Mäso a ryby', r'krůt'),
   ('hovadzie', 'Hovädzie mäso', 'Mäso a ryby', r'hověz|steak|roštěn'),
   ('bravcove', 'Bravčové mäso', 'Mäso a ryby', r'vepř|panenk|krkovic'),
@@ -38,7 +38,7 @@ CHIPS = [
   ('jablko', 'Jablko / hruška', 'Ovocie', r'(?<!granátové )jabl|hrušk'),
   ('bobule', 'Bobuľové ovocie', 'Ovocie', r'borůvk|malin|jahod|ostružin|rybíz|lesní ovoc|lesního ovoc|lesním ovoc'),
   ('citrusy', 'Pomaranč / mandarínka', 'Ovocie', r'pomeranč|mandarink'),
-  ('susene', 'Datle / hrozienka', 'Ovocie', r'datl|rozink|sušen'),
+  ('susene', 'Datle / hrozienka', 'Ovocie', r'datl|rozink|brusink|sušen[éáý]+\s+(ovoc|švest|meruň|jabl|fík|brusin|mang)'),
   ('ovocie', 'Iné ovocie', 'Ovocie', r'ovoc|mango|kiwi|ananas|broskv|meruňk|švestk|třešn|višn|hrozn|fík|meloun'),
   ('spenat', 'Špenát', 'Zelenina', r'špenát'),
   ('paradajky', 'Paradajky', 'Zelenina', r'rajč|cherry'),
@@ -90,6 +90,12 @@ def requirements(ing):
             alts = set()
             for part in g.split('/'):
                 alts.update(tags_of(part))
+            # Lyžička papriky je korenie, nie zelenina.
+            if re.match(r'^\s*[\d½¼¾/,\.\s]*(lžičk|lžič|lžíc|špetk|PL|KL)', g):
+                alts -= {'paprika'}
+            # Vývar nie je mäso.
+            if re.search(r'vývar|bujón', g, re.I):
+                alts -= {'kuracie', 'morcacie', 'hovadzie', 'bravcove'}
             if alts: reqs.append(sorted(alts))
     # Duplicitné požiadavky zlúč.
     out = []
