@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Jedlo</title>
+<meta name="description" content="Denník stravovania – kalórie, makrá, návyky a rozpoznanie jedla z fotky.">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jedlo">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <button class="icon-btn" id="prev-day" aria-label="Predošlý deň">‹</button>
+  <h1 id="title">Dnes</h1>
+  <button class="icon-btn" id="next-day" aria-label="Ďalší deň">›</button>
+</header>
+
+<main>
+  <section id="view-today" class="view active"></section>
+  <section id="view-stats" class="view"></section>
+  <section id="view-weight" class="view"></section>
+  <section id="view-profile" class="view"></section>
+</main>
+
+<nav class="tabs">
+  <button data-view="today" class="active"><span>🍽️</span>Dnes</button>
+  <button data-view="stats"><span>📊</span>Štatistiky</button>
+  <button class="add" id="open-add" aria-label="Pridať jedlo">+</button>
+  <button data-view="weight"><span>⚖️</span>Váha</button>
+  <button data-view="profile"><span>👤</span>Profil</button>
+</nav>
+
+<div class="sheet-bg" id="sheet-bg" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <h2 id="sheet-title">Pridať jedlo</h2>
+      <button class="icon-btn" id="close-add" aria-label="Zavrieť">✕</button>
+    </div>
+    <div id="sheet-body"></div>
+  </div>
+</div>
+
+<input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+<input type="file" id="import-input" accept="application/json" hidden>
+<div class="toast" id="toast" hidden></div>
+
+<script src="foods.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
