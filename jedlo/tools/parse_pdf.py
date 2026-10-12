@@ -40,6 +40,9 @@ def parse_pages(pages):
     for pno, lines in pages:
         body = [l for l in lines if not NOISE.match(l)]
         if not body: continue
+        head = body[0] + (' ' + body[1] if len(body) > 1 else '')
+        if head == 'SNÍDANĚ V DEN ZÁPASU':
+            cat = 'predzapas'; cur = None; continue
         if body[0] in SECTION:
             cat = SECTION[body[0]]; cur = None; continue
         meta = [l for l in body if META.match(l)]
