@@ -3,24 +3,24 @@
 // ---------- Úložisko ----------
 const STORE_KEY = 'jedlo.v1';
 const KEY_KEY = 'jedlo.apikey';
-const MEALS = [
-  ['ranajky', 'Raňajky'],
-  ['obed', 'Obed'],
-  ['desiata', 'Desiata / snack'],
-  ['vecera', 'Večera'],
-];
-const MEAL_LABEL = Object.fromEntries(MEALS);
 const MODELS = [
   ['claude-opus-5-5', 'Claude Opus 5.5 – presnejší (~1–2 centy / fotka)'],
   ['claude-haiku-5-5', 'Claude Haiku 5.5 – lacnejší, rýchlejší'],
 ];
+const DRINKS = [
+  ['glass', 'Pohár', 250],
+  ['bottle5', 'Fľaša 0,5 l', 500],
+  ['bottle75', 'Fľaša 0,75 l', 750],
+  ['bottle1', 'Fľaša 1 l', 1000],
+];
 
 function defaultState() {
   return {
-    profile: { sex: 'm', age: null, height: null, weight: null, activity: 1.55, surplus: 350, proteinPerKg: 2, model: MODELS[0][0] },
+    profile: { name: '', sex: 'm', age: null, height: null, weight: null, activity: 1.725, surplus: 350, proteinPerKg: 2, model: MODELS[0][0] },
     entries: [],
     weights: [],
     water: {},
+    health: {},
   };
 }
 
@@ -67,6 +67,7 @@ const r1 = n => Math.round((n || 0) * 10) / 10;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const liters = ml => (ml / 1000).toLocaleString('sk-SK', { maximumFractionDigits: 2 });
 
 function dayKey(d) {
   const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
@@ -76,21 +77,21 @@ function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); retu
 function parseDay(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
 const todayKey = () => dayKey(new Date());
 
-function fmtDay(k) {
+function dayTitle(k) {
   if (k === todayKey()) return 'Dnes';
   if (k === dayKey(addDays(new Date(), -1))) return 'Včera';
-  return parseDay(k).toLocaleDateString('sk-SK', { weekday: 'short', day: 'numeric', month: 'numeric' });
+  return parseDay(k).toLocaleDateString('sk-SK', { weekday: 'long' }).replace(/^./, c => c.toUpperCase());
+}
+
+function nameday(k) {
+  const mmdd = k.slice(5, 7) + k.slice(8, 10);
+  const n = MENINY[mmdd];
+  if (!n) return SVIATKY[mmdd] || 'Meniny nemá nikto';
+  const a = n.split(',');
+  return 'Meniny: ' + (a.length > 1 ? a.slice(0, -1).join(', ') + ' a ' + a.at(-1) : a[0]);
 }
 
 function scoreClass(s) { return s >= 7 ? 's-good' : s >= 4 ? 's-mid' : 's-bad'; }
-
-function defaultMeal() {
-  const h = new Date().getHours() + new Date().getMinutes() / 60;
-  if (h < 10.5) return 'ranajky';
-  if (h < 15) return 'obed';
-  if (h < 17.5) return 'desiata';
-  return 'vecera';
-}
 
 let toastTimer;
 function toast(msg) {
@@ -101,18 +102,38 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
 }
 
-// ---------- Ciele ----------
-function currentWeight() {
-  if (S.weights.length) return [...S.weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1).kg;
-  return S.profile.weight;
-}
+const ICON = {
+  camera: '<path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
+  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  left: '<path d="M15 5l-7 7 7 7"/>',
+  right: '<path d="M9 5l7 7-7 7"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  scale: '<rect x="3" y="4" width="18" height="16" rx="4"/><path d="M8.5 11a3.5 3.5 0 017 0M12 11l1.5-2"/>',
+  flame: '<path d="M12 21c-3.9 0-7-2.7-7-6.5 0-3 2-5.2 3.5-6.6.3 1.6 1.2 2.6 2.2 3.1C10.5 7.5 12 4.5 14.5 3c-.3 2.6.8 4.5 2.4 6.2C18.3 10.7 19 12.5 19 14.5 19 18.3 15.9 21 12 21z"/>',
+  glass: '<path d="M6 3h12l-1.5 16.5a2 2 0 01-2 1.5h-5a2 2 0 01-2-1.5z"/><path d="M6.6 9h10.8"/>',
+  bottle5: '<path d="M10 2h4v3l1.5 2.5V20a2 2 0 01-2 2h-3a2 2 0 01-2-2V7.5L10 5z"/><path d="M8.5 12h7"/>',
+  bottle75: '<path d="M10 2h4v3l2 2.5V20a2 2 0 01-2 2h-4a2 2 0 01-2-2V7.5L10 5z"/><path d="M8 11h8"/>',
+  bottle1: '<path d="M9.5 2h5v3l2.5 2.5V20a2 2 0 01-2 2H9a2 2 0 01-2-2V7.5L9.5 5z"/><path d="M7 10h10"/>',
+  health: '<path d="M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z"/>',
+};
+const icon = (k, s = 20, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
 
-function targets() {
+// ---------- Ciele ----------
+function sortedWeights() { return [...S.weights].sort((a, b) => a.date.localeCompare(b.date)); }
+function currentWeight() { return S.weights.length ? sortedWeights().at(-1).kg : S.profile.weight; }
+
+function targets(date) {
   const p = S.profile;
   const w = currentWeight();
   if (!w || !p.height || !p.age) return null;
   const bmr = 10 * w + 6.25 * p.height - 5 * p.age + (p.sex === 'f' ? -161 : 5);
-  const tdee = bmr * p.activity;
+  let tdee = bmr * p.activity;
+  // Ak Zdravie ukáže, že si v ten deň spálil viac, cieľ sa zvýši (nikdy neklesne pod odhad z profilu).
+  const h = S.health[date];
+  if (h?.active) tdee = Math.max(tdee, (bmr + h.active) * 1.1);
   const kcal = tdee + Number(p.surplus || 0);
   const protein = w * p.proteinPerKg;
   const fat = (kcal * 0.25) / 9;
@@ -135,29 +156,9 @@ function dayTotals(date) {
   return t;
 }
 
-// ---------- Navigácia ----------
-let view = 'today';
+// ---------- Hlavná stránka ----------
 let curDate = todayKey();
-const VIEW_TITLE = { stats: 'Štatistiky', weight: 'Váha', profile: 'Profil' };
 
-function show(v) {
-  view = v;
-  document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === 'view-' + v));
-  document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
-  render();
-  window.scrollTo(0, 0);
-}
-
-function render() {
-  const onToday = view === 'today';
-  $('#prev-day').style.visibility = onToday ? 'visible' : 'hidden';
-  $('#next-day').style.visibility = onToday ? 'visible' : 'hidden';
-  $('#next-day').disabled = curDate >= todayKey();
-  $('#title').textContent = onToday ? fmtDay(curDate) : VIEW_TITLE[view];
-  ({ today: renderToday, stats: renderStats, weight: renderWeight, profile: renderProfile })[view]();
-}
-
-// ---------- Dnes ----------
 function ring(value, target, c1, c2, id) {
   const size = 132, sw = 13, R = (size - sw) / 2, C = 2 * Math.PI * R, c = size / 2;
   const pct = target ? Math.min(value / target, 1) : 0;
@@ -170,32 +171,31 @@ function ring(value, target, c1, c2, id) {
     ${pct > 0 ? arc(`filter="url(#${id}b)" opacity="0.6"`) + arc('') : ''}</svg>`;
 }
 
-const ICON = {
-  camera: '<path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
-  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
-  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-};
-const icon = (k, s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k]}</svg>`;
-
 function bar(label, value, target, color, unit = 'g') {
   const pct = target ? Math.min((value / target) * 100, 100) : 0;
   return `<div><div class="bar-label"><span>${label}</span><span class="muted">${r0(value)} / ${target ? r0(target) : '–'} ${unit}</span></div>
     <div class="bar"><i style="width:${pct}%;background:${color}"></i></div></div>`;
 }
 
-function renderToday() {
-  const el = $('#view-today');
-  const t = targets();
+function render() {
+  $('#title').textContent = dayTitle(curDate);
+  const recent = curDate >= dayKey(addDays(new Date(), -1));
+  $('#date').textContent = parseDay(curDate).toLocaleDateString('sk-SK', recent ? { weekday: 'long', day: 'numeric', month: 'long' } : { day: 'numeric', month: 'long', year: 'numeric' });
+  $('#nameday').textContent = nameday(curDate);
+  $('#next-day').disabled = curDate >= todayKey();
+  $('#open-profile').textContent = (S.profile.name || '?').trim().charAt(0).toUpperCase() || '?';
+
+  const t = targets(curDate);
   const tot = dayTotals(curDate);
-  const water = S.water[curDate] || 0;
+  const h = S.health[curDate];
   let html = '';
 
   if (!t) {
-    html += `<div class="warn">Najprv vyplň <b>Profil</b> (vek, výška, váha) – vypočítam ti denný cieľ kalórií a bielkovín na priberanie.
-      <div style="margin-top:8px"><button class="btn sm primary" data-go="profile">Vyplniť profil</button></div></div>`;
+    html += `<div class="warn">Najprv vyplň profil (vek, výška, váha) – vypočítam ti denný cieľ na priberanie.
+      <div style="margin-top:10px"><button class="btn sm primary" data-act="profile">Vyplniť profil</button></div></div>`;
   }
 
+  // Kalórie a makrá
   const left = t ? r0(t.kcal - tot.kcal) : null;
   html += `<div class="card dark"><div class="ring-wrap">
     <div class="ring">${ring(tot.kcal, t?.kcal, '#1fd67a', '#b6ff5a', 'rk')}
@@ -206,33 +206,173 @@ function renderToday() {
       ${bar('Tuky', tot.f, t?.f, 'var(--f)')}
       ${bar('Vláknina', tot.fib, t?.fib, 'var(--fib)')}
     </div></div>
-    ${t ? `<p class="summary">${left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ kalórií splnený ✅ (+${-left} kcal)`}
-      ${tot.score ? ` · Zdravosť dňa: <span class="score ${scoreClass(tot.score)}">${r1(tot.score)}</span>` : ''}</p>` : ''}
+    <div class="summary"><span>${t
+      ? (left > 0 ? `Ešte zjedz <b>${left} kcal</b> a <b>${Math.max(0, t.p - r0(tot.p))} g</b> bielkovín.` : `Cieľ splnený ✓ <span class="muted">(+${-left} kcal)</span>`)
+      : 'Pridaj, čo si zjedol.'}</span>
+      <button class="round orange" data-act="add" aria-label="Pridať jedlo">${icon('plus', 20, 2.4)}</button></div>
+    ${h ? `<div class="health-line">${icon('flame', 15)} Zo Zdravia: <b>${r0(h.active)} kcal</b> aktívne${h.steps ? ` · <b>${r0(h.steps).toLocaleString('sk-SK')}</b> krokov` : ''}</div>` : ''}
   </div>`;
 
-  html += `<div class="card"><div class="water">
-    <span class="ico">${icon('drop')}</span>
-    <div style="flex:1">${bar('Voda', water, t?.water, 'var(--water)', 'ml')}</div>
-    <button class="btn sm" data-water="-250" aria-label="Uber 250 ml">−</button>
-    <button class="btn sm" data-water="250" aria-label="Pridaj 250 ml">+</button>
+  // Voda
+  const water = S.water[curDate] || 0;
+  const wt = t?.water || 2500;
+  html += `<div class="card"><div class="tile">
+    <span class="ico water">${icon('drop')}</span>
+    <div class="tile-main"><div class="tile-label">Voda</div>
+      <div class="tile-val">${liters(water)} l <small>z ${liters(wt)} l</small></div>
+      <div class="bar"><i style="width:${Math.min(100, (water / wt) * 100)}%;background:var(--water)"></i></div></div>
+    <button class="round" data-act="water" aria-label="Pridať vodu">${icon('plus', 20, 2.4)}</button>
   </div></div>`;
 
-  for (const [m, label] of MEALS) {
-    const items = S.entries.filter(e => e.date === curDate && e.meal === m).sort((a, b) => a.ts - b.ts);
-    const kc = items.reduce((s, e) => s + e.kcal, 0);
-    html += `<div class="card"><div class="meal-head"><h3>${label}</h3><span class="muted small">${r0(kc)} kcal</span></div><div class="meal-list">`;
-    if (!items.length) html += `<div class="empty">Nič zapísané · <a href="#" data-add-meal="${m}">pridať</a></div>`;
-    for (const e of items) {
-      html += `<button class="entry" data-entry="${e.id}">
+  // Váha
+  const ws = sortedWeights();
+  const tr = weightTrend();
+  html += `<div class="card"><div class="tile">
+    <span class="ico weight">${icon('scale')}</span>
+    <div class="tile-main"><div class="tile-label">Váha</div>
+      <div class="tile-val">${ws.length ? ws.at(-1).kg.toLocaleString('sk-SK') + ' kg' : '–'}
+        ${tr ? `<small>${tr.perWeek >= 0 ? '+' : ''}${tr.perWeek.toFixed(2).replace('.', ',')} kg/týždeň</small>` : ''}</div>
+      ${tr ? `<div class="small muted">${trendAdvice(tr).text}</div>` : `<div class="small muted">${ws.length ? 'Tempo uvidíš po 7 dňoch vážení.' : 'Zapíš ráno nalačno, 2–3× týždenne.'}</div>`}</div>
+    <button class="round" data-act="weight" aria-label="Zapísať váhu">${icon('plus', 20, 2.4)}</button>
+  </div></div>`;
+
+  // Záznamy a štatistiky – len keď je čo ukázať
+  const items = S.entries.filter(e => e.date === curDate).sort((a, b) => a.ts - b.ts);
+  if (items.length) {
+    html += `<div class="card"><h3>Záznamy <span class="muted small">${items.length}× · ${tot.score ? `zdravosť <span class="score ${scoreClass(tot.score)}">${r1(tot.score)}</span>` : ''}</span></h3>
+      <div class="list">${items.map(e => `<button class="entry" data-entry="${e.id}">
         ${e.thumb ? `<img src="${e.thumb}" alt="">` : ''}
         <div class="info"><div class="name">${esc(e.name)}</div>
-          <div class="small muted">${r0(e.g)} g · B ${r0(e.p)} · S ${r0(e.c)} · T ${r0(e.f)}</div></div>
+          <div class="small muted">${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} · ${r0(e.g)} g · B ${r0(e.p)} g</div></div>
         <span class="score ${scoreClass(e.score)}">${e.score ?? '–'}</span>
-        <span class="kc">${r0(e.kcal)}</span></button>`;
-    }
-    html += '</div></div>';
+        <span class="kc">${r0(e.kcal)}</span></button>`).join('')}</div></div>`;
   }
-  el.innerHTML = html;
+  html += weekStats();
+
+  $('#page').innerHTML = html;
+}
+
+function weekStats() {
+  const days = [];
+  for (let i = 6; i >= 0; i--) days.push(dayKey(addDays(parseDay(curDate), -i)));
+  const tots = days.map(d => ({ d, t: targets(d), ...dayTotals(d) }));
+  const logged = tots.filter(x => x.n > 0);
+  if (!logged.length) return '';
+
+  const W = 320, H = 120;
+  const maxV = Math.max(...tots.map(x => Math.max(x.kcal, x.t?.kcal || 0))) * 1.1 || 1;
+  const bw = W / 7;
+  const bars = tots.map((x, i) => {
+    const h = (x.kcal / maxV) * (H - 18);
+    const ok = x.t && x.kcal >= x.t.kcal * 0.9;
+    const th = x.t ? H - 16 - (x.t.kcal / maxV) * (H - 18) : null;
+    return `<rect x="${i * bw + bw * 0.2}" y="${H - 16 - h}" width="${bw * 0.6}" height="${Math.max(h, 0)}" rx="5" fill="${ok ? '#1fd67a' : 'var(--orange)'}" opacity="${x.n ? 1 : 0.2}"/>` +
+      (th !== null ? `<line x1="${i * bw + bw * 0.1}" x2="${i * bw + bw * 0.9}" y1="${th}" y2="${th}" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-dasharray="3 3"/>` : '') +
+      `<text x="${i * bw + bw / 2}" y="${H - 2}" font-size="11" font-weight="${x.d === curDate ? 800 : 600}" text-anchor="middle" fill="${x.d === curDate ? '#fff' : 'rgba(255,255,255,.55)'}">${parseDay(x.d).toLocaleDateString('sk-SK', { weekday: 'short' }).slice(0, 2)}</text>`;
+  }).join('');
+
+  const avg = k => logged.reduce((s, x) => s + x[k], 0) / logged.length;
+  const tip = mainTip(logged);
+  return `<div class="card dark"><h3>Posledných 7 dní</h3>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kalórie za posledných 7 dní">${bars}</svg>
+    <div class="trio">
+      <div><b>${r0(avg('kcal'))}</b><span>kcal / deň</span></div>
+      <div><b>${r0(avg('p'))} g</b><span>bielkoviny / deň</span></div>
+      <div><b>${streak()}</b><span>dní v rade</span></div>
+    </div>
+    ${tip ? `<p class="tip">${tip}</p>` : ''}</div>`;
+}
+
+function streak() {
+  const dates = new Set(S.entries.map(e => e.date));
+  let d = new Date();
+  if (!dates.has(dayKey(d))) d = addDays(d, -1);
+  let n = 0;
+  while (dates.has(dayKey(d))) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+// Jeden najdôležitejší tip namiesto zoznamu.
+function mainTip(logged) {
+  const done = logged.filter(x => x.d !== todayKey());
+  if (done.length < 2) return '';
+  const kMiss = done.filter(x => x.t && x.kcal < x.t.kcal * 0.9).length;
+  const pMiss = done.filter(x => x.t && x.p < x.t.p * 0.9).length;
+  if (kMiss > done.length / 2) return `Kalórie si nesplnil ${kMiss}× z ${done.length}. Pridaj kalorické veci: ovsené vločky s arašidovým maslom, orechy, olivový olej, mliečny shake.`;
+  if (pMiss > done.length / 2) return `Bielkoviny pod cieľom ${pMiss}× z ${done.length}. Daj do každého jedla mäso, vajcia, tvaroh, skyr alebo proteín.`;
+  const sc = done.reduce((s, x) => s + x.scoreW, 0) / (done.reduce((s, x) => s + x.kcal, 0) || 1);
+  if (sc < 5) return 'Veľa spracovaného jedla. Rovnaké kalórie dáš aj z ryže, mäsa, vajec, orechov a ovocia.';
+  return 'Ideš dobre – drž to. 💪';
+}
+
+// ---------- Váha ----------
+function weightTrend() {
+  const ws = sortedWeights();
+  if (ws.length < 2) return null;
+  const last = parseDay(ws.at(-1).date);
+  const recent = ws.filter(w => (last - parseDay(w.date)) / 864e5 <= 28);
+  if (recent.length < 2 || (last - parseDay(recent[0].date)) / 864e5 < 7) return null;
+  // Lineárna regresia kg vs. deň.
+  const xs = recent.map(w => (parseDay(w.date) - last) / 864e5), ys = recent.map(w => w.kg);
+  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
+  const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0) || 1;
+  const perWeek = (num / den) * 7;
+  return { perWeek, pct: (perWeek / my) * 100 };
+}
+
+function trendAdvice(tr) {
+  if (tr.pct < 0.1) return { text: 'Váha stojí. Pridaj ~150 kcal denne.', delta: 150 };
+  if (tr.pct < 0.25) return { text: 'Priberáš pomaly. Pridaj ~100 kcal.', delta: 100 };
+  if (tr.pct <= 0.5) return { text: 'Ideálne tempo na svaly. ✓', delta: 0 };
+  if (tr.pct <= 0.75) return { text: 'Trochu rýchlo. Uber ~100 kcal.', delta: -100 };
+  return { text: 'Príliš rýchlo, pribúda tuk. Uber ~150 kcal.', delta: -150 };
+}
+
+function openWeight() {
+  const ws = sortedWeights();
+  const tr = weightTrend();
+  const adv = tr && trendAdvice(tr);
+  openSheet('Váha', `
+    <div class="row"><input class="input" id="w-kg" type="number" step="0.1" inputmode="decimal" placeholder="kg" value="${ws.at(-1)?.kg ?? S.profile.weight ?? ''}" style="margin:0">
+      <button class="btn primary sm" id="w-save">Uložiť</button></div>
+    <p class="small muted" style="margin:8px 0 14px">Váž sa ráno po toalete, nalačno.</p>
+    ${adv?.delta ? `<button class="btn" id="w-apply" style="margin-bottom:14px">Upraviť cieľ o ${adv.delta > 0 ? '+' : ''}${adv.delta} kcal</button>` : ''}
+    ${ws.length ? `<div class="list">${[...ws].reverse().slice(0, 12).map(w => `<div class="list-item">
+      <span>${parseDay(w.date).toLocaleDateString('sk-SK', { day: 'numeric', month: 'numeric', year: 'numeric' })}</span>
+      <span class="row"><b>${w.kg.toLocaleString('sk-SK')} kg</b><button class="round sm" data-wdel="${w.date}" aria-label="Zmazať">${icon('close', 14, 2.4)}</button></span></div>`).join('')}</div>` : ''}
+  `);
+  $('#w-save').onclick = () => {
+    const kg = Number(String($('#w-kg').value).replace(',', '.'));
+    if (!(kg > 20 && kg < 400)) return toast('Zadaj platnú váhu.');
+    const d = todayKey();
+    S.weights = S.weights.filter(w => w.date !== d);
+    S.weights.push({ date: d, kg: r1(kg) });
+    S.profile.weight = r1(kg);
+    save(); closeSheet(); render(); toast('Váha uložená');
+  };
+  const ap = $('#w-apply');
+  if (ap) ap.onclick = () => {
+    S.profile.surplus = Number(S.profile.surplus || 0) + adv.delta;
+    save(); closeSheet(); render(); toast(`Nový prebytok: ${S.profile.surplus} kcal`);
+  };
+}
+
+// ---------- Voda ----------
+function openWater() {
+  const water = S.water[curDate] || 0;
+  const wt = targets(curDate)?.water || 2500;
+  openSheet('Voda', `
+    <div class="water-big"><b>${liters(water)} l</b><span class="muted"> z ${liters(wt)} l</span></div>
+    <div class="drinks">${DRINKS.map(([k, l, ml]) => `<button class="drink" data-drink="${ml}">${icon(k, 30, 1.6)}<b>${l}</b><span>${ml} ml</span></button>`).join('')}</div>
+    ${water ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
+  `);
+}
+
+function addWater(ml) {
+  S.water[curDate] = Math.max(0, (S.water[curDate] || 0) + ml);
+  save(); render(); closeSheet();
+  toast(ml > 0 ? `+${ml} ml · spolu ${liters(S.water[curDate])} l` : `Spolu ${liters(S.water[curDate])} l`);
 }
 
 // ---------- AI analýza ----------
@@ -268,24 +408,24 @@ const AI_SCHEMA = {
 const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu identifikuj každú samostatnú zložku jedla.
 - Odhadni hmotnosť každej zložky v gramoch podľa veľkosti porcie (bežný tanier má ~26 cm, použi príbor a ruky ako mierku).
 - Nutričné hodnoty uveď pre CELÚ odhadnutú porciu danej zložky, nie na 100 g.
-- Ak používateľ uvedie gramáž, značku alebo spôsob prípravy, má to prednosť pred odhadom. Počítaj aj s olejom/maslom pri príprave.
+- Ak používateľ uvedie čo to je, gramáž, značku alebo spôsob prípravy, má to prednosť pred odhadom. Počítaj aj s olejom/maslom pri príprave.
 - Názvy píš po slovensky, krátko (napr. "Ryža biela varená").
 - health_score 1–10: 10 = nespracované, výživné potraviny; 5 = bežné; 1 = ultraspracované, veľa cukru, vyprážané.
-- note: 1–2 vety po slovensky, zhodnoť jedlo vzhľadom na cieľ používateľa (napr. či má dosť bielkovín) a daj jeden konkrétny tip.
+- note: 1 krátka veta po slovensky – zhodnoť jedlo vzhľadom na cieľ používateľa.
 - Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.`;
 
 async function analyzeFood({ image, text }) {
   const key = getKey();
-  if (!key) throw new Error('Chýba API kľúč. Zadaj ho v Profile.');
+  if (!key) throw new Error('Chýba API kľúč. Zadaj ho v profile (vpravo hore).');
   const model = S.profile.model || MODELS[0][0];
-  const t = targets();
+  const t = targets(todayKey());
   const goal = Number(S.profile.surplus) > 0 ? 'priberať svalovú hmotu' : 'udržať váhu';
   const content = [];
   if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } });
   content.push({
     type: 'text',
     text: `Cieľ používateľa: ${goal}${t ? ` (${t.kcal} kcal, ${t.p} g bielkovín denne)` : ''}.\n` +
-      (text ? `Popis od používateľa: ${text}` : 'Analyzuj jedlo na fotke.'),
+      (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.'),
   });
   const body = {
     model,
@@ -340,7 +480,7 @@ function resize(img, max, quality) {
 }
 
 function thumbOf(img) {
-  // Štvorcový výrez 72 px do zoznamu jedál.
+  // Štvorcový výrez 72 px do zoznamu.
   const s = Math.min(img.naturalWidth, img.naturalHeight);
   const c = document.createElement('canvas');
   c.width = c.height = 72;
@@ -348,8 +488,7 @@ function thumbOf(img) {
   return c.toDataURL('image/jpeg', 0.55);
 }
 
-// ---------- Sheet: pridávanie ----------
-let addMeal = defaultMeal();
+// ---------- Panel (sheet) ----------
 let pendingPhoto = null; // { dataUrl, base64, thumb }
 
 function openSheet(title, html) {
@@ -363,11 +502,6 @@ function closeSheet() {
   pendingPhoto = null;
 }
 
-function mealSelect(sel) {
-  return `<div class="seg" id="meal-seg">${MEALS.map(([k, l]) =>
-    `<button type="button" data-meal="${k}" class="${k === sel ? 'on' : ''}">${l.split(' ')[0]}</button>`).join('')}</div>`;
-}
-
 function recentFoods() {
   const seen = new Set(), out = [];
   for (const e of [...S.entries].sort((a, b) => b.ts - a.ts)) {
@@ -375,100 +509,26 @@ function recentFoods() {
     if (seen.has(k) || !e.g) continue;
     seen.add(k);
     out.push(e);
-    if (out.length >= 15) break;
+    if (out.length >= 8) break;
   }
   return out;
 }
 
-function openAdd(meal) {
-  addMeal = meal || (curDate === todayKey() ? defaultMeal() : 'obed');
+// ---------- Pridať jedlo ----------
+function openAdd() {
   const recent = recentFoods();
   openSheet('Pridať jedlo', `
-    ${mealSelect(addMeal)}
-    <div class="big-actions">
-      <button class="btn primary" id="act-photo">${icon('camera')}Odfotiť jedlo</button>
-      <button class="btn" id="act-text">${icon('pen')}Opísať textom</button>
-    </div>
-    <input class="input" id="food-search" type="search" placeholder="Hľadať potravinu (ryža, vajce, tvaroh…)" autocomplete="off">
-    <div id="search-results"></div>
-    ${recent.length ? `<h3 class="sub-h">Naposledy jedené</h3>
-      ${recent.map(e => `<button class="list-item" data-recent="${e.id}"><span>${esc(e.name)}</span>
-        <span class="muted small">${r0(e.g)} g · ${r0(e.kcal)} kcal</span></button>`).join('')}` : ''}
-    <div style="margin-top:16px"><button class="btn" id="act-custom">${icon('plus', 18)}Vlastná položka</button></div>
+    <button class="btn primary big" data-act="photo">${icon('camera', 26)}Odfotiť jedlo</button>
+    <button class="btn" data-act="text" style="margin-top:10px">${icon('pen', 18)}Napísať, čo som jedol</button>
+    ${recent.length ? `<h3 class="sub-h">Znova</h3><div class="list">${recent.map(e => `<button class="list-item" data-recent="${e.id}">
+      <span>${esc(e.name)}</span><span class="muted small">${r0(e.g)} g · ${r0(e.kcal)} kcal</span></button>`).join('')}</div>` : ''}
   `);
-}
-
-function renderSearch(q) {
-  const box = $('#search-results');
-  if (!box) return;
-  const nq = norm(q.trim());
-  if (!nq) { box.innerHTML = ''; return; }
-  const hits = FOODS.map((f, i) => [f, i]).filter(([f]) => norm(f[0]).includes(nq)).slice(0, 12);
-  box.innerHTML = hits.length
-    ? hits.map(([f, i]) => `<button class="list-item" data-food="${i}"><span>${esc(f[0])}</span>
-        <span class="muted small">${f[1]} kcal / 100 g</span></button>`).join('')
-    : `<div class="empty" style="padding:10px 0">Nenašiel som. Skús <b>Opísať textom</b> – AI to dopočíta.</div>`;
-}
-
-// Výber gramáže pre potravinu so známymi hodnotami na gram.
-function openPortion({ name, per, score, g, thumb }) {
-  openSheet(name, `
-    ${mealSelect(addMeal)}
-    <label class="field">Množstvo (g)<input class="input" id="portion-g" type="number" inputmode="decimal" min="0" value="${r0(g)}"></label>
-    <div class="grid3" id="portion-info"></div>
-    <div style="margin-top:14px"><button class="btn primary" id="portion-save">Pridať</button></div>
-  `);
-  const upd = () => {
-    const gg = Number($('#portion-g').value) || 0;
-    $('#portion-info').innerHTML = `
-      <div class="stat"><b>${r0(per.kcal * gg)}</b><span class="small muted">kcal</span></div>
-      <div class="stat"><b>${r0(per.p * gg)} g</b><span class="small muted">bielkoviny</span></div>
-      <div class="stat"><b><span class="score ${scoreClass(score)}">${score}</span></b><span class="small muted">zdravosť</span></div>`;
-  };
-  $('#portion-g').addEventListener('input', upd);
-  upd();
-  $('#portion-save').onclick = () => {
-    const gg = Number($('#portion-g').value) || 0;
-    if (gg <= 0) return toast('Zadaj množstvo.');
-    addEntries([{ name, g: gg, kcal: per.kcal * gg, p: per.p * gg, c: per.c * gg, f: per.f * gg, fib: per.fib * gg, score, thumb }], 'db');
-  };
-}
-
-function perGramFromEntry(e) {
-  const g = e.g || 1;
-  return { kcal: e.kcal / g, p: e.p / g, c: e.c / g, f: e.f / g, fib: (e.fib || 0) / g };
-}
-
-function openCustom() {
-  openSheet('Vlastná položka', `
-    ${mealSelect(addMeal)}
-    <label class="field">Názov<input class="input" id="c-name" placeholder="napr. Domáci guláš"></label>
-    <div class="grid2">
-      <label class="field">Množstvo (g)<input class="input" id="c-g" type="number" inputmode="decimal" value="100"></label>
-      <label class="field">Kalórie (kcal)<input class="input" id="c-kcal" type="number" inputmode="decimal"></label>
-      <label class="field">Bielkoviny (g)<input class="input" id="c-p" type="number" inputmode="decimal"></label>
-      <label class="field">Sacharidy (g)<input class="input" id="c-c" type="number" inputmode="decimal"></label>
-      <label class="field">Tuky (g)<input class="input" id="c-f" type="number" inputmode="decimal"></label>
-      <label class="field">Vláknina (g)<input class="input" id="c-fib" type="number" inputmode="decimal"></label>
-    </div>
-    <label class="field">Zdravosť 1–10<input class="input" id="c-score" type="number" min="1" max="10" value="5"></label>
-    <button class="btn primary" id="c-save">Pridať</button>
-  `);
-  $('#c-save').onclick = () => {
-    const v = id => Number($(id).value) || 0;
-    const name = $('#c-name').value.trim();
-    if (!name || !v('#c-kcal')) return toast('Vyplň názov a kalórie.');
-    addEntries([{ name, g: v('#c-g'), kcal: v('#c-kcal'), p: v('#c-p'), c: v('#c-c'), f: v('#c-f'), fib: v('#c-fib'),
-      score: Math.min(10, Math.max(1, v('#c-score') || 5)) }], 'manual');
-  };
 }
 
 function openTextAI() {
-  openSheet('Opísať jedlo', `
-    ${mealSelect(addMeal)}
-    <label class="field">Čo si jedol?
-      <textarea class="input" id="ai-text" placeholder="napr. 200 g kuracích pŕs, 250 g ryže, šalát s olivovým olejom"></textarea></label>
-    <button class="btn primary" id="ai-go">✨ Vypočítať</button>
+  openSheet('Čo si jedol?', `
+    <textarea class="input" id="ai-text" placeholder="napr. 200 g kuracích pŕs, 250 g ryže, šalát s olivovým olejom"></textarea>
+    <button class="btn primary" id="ai-go" style="margin-top:12px">Vypočítať</button>
   `);
   $('#ai-text').focus();
   $('#ai-go').onclick = () => {
@@ -480,11 +540,9 @@ function openTextAI() {
 
 function openPhotoReview() {
   openSheet('Fotka jedla', `
-    ${mealSelect(addMeal)}
     <img class="preview" src="${pendingPhoto.dataUrl}" alt="Fotka jedla">
-    <label class="field">Doplnenie (nepovinné)
-      <input class="input" id="ai-text" placeholder="napr. 300 g, varené na masle, proteínový nápoj"></label>
-    <button class="btn primary" id="ai-go">✨ Analyzovať fotku</button>
+    <input class="input" id="ai-text" placeholder="Čo to je? napr. kuracie s ryžou, 300 g (nepovinné)">
+    <button class="btn primary" id="ai-go" style="margin-top:12px">Analyzovať</button>
   `);
   $('#ai-go').onclick = () => runAI({ image: pendingPhoto.base64, text: $('#ai-text').value.trim() });
 }
@@ -494,13 +552,12 @@ async function runAI({ image, text }) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Analyzujem…';
   try {
-    const res = await analyzeFood({ image, text });
-    showAIResult(res);
+    showAIResult(await analyzeFood({ image, text }));
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = '✨ Skúsiť znova';
+    btn.textContent = 'Skúsiť znova';
     toast(err.message || 'Niečo sa pokazilo.');
-    if (!getKey()) { closeSheet(); show('profile'); }
+    if (!getKey()) { closeSheet(); openProfile(); }
   }
 }
 
@@ -510,7 +567,6 @@ function showAIResult(res) {
     return { name: it.name, g, base: g, kcal: it.kcal, p: it.protein, c: it.carbs, f: it.fat, fib: it.fiber,
       score: Math.min(10, Math.max(1, Math.round(it.health_score || 5))) };
   });
-  const conf = { low: 'nízka', medium: 'stredná', high: 'vysoká' }[res.confidence] || res.confidence;
   const thumb = pendingPhoto?.thumb;
   const draw = () => {
     const tot = items.reduce((s, it) => {
@@ -519,27 +575,25 @@ function showAIResult(res) {
       return s;
     }, { kcal: 0, p: 0, c: 0, f: 0 });
     openSheet(res.meal_name || 'Výsledok', `
-      ${mealSelect(addMeal)}
-      ${pendingPhoto ? `<img class="preview" src="${pendingPhoto.dataUrl}" alt="">` : ''}
       <div class="ai-sum">
         <div class="grid3">
           <div><b>${r0(tot.kcal)}</b><div class="lbl">kcal</div></div>
           <div><b>${r0(tot.p)} g</b><div class="lbl">bielkoviny</div></div>
           <div><b>${r0(tot.c)}/${r0(tot.f)}</b><div class="lbl">sach./tuky g</div></div>
         </div>
-        <p class="small" style="margin:10px 0 0">${esc(res.note)}</p>
-        <p class="small" style="margin:6px 0 0;opacity:.85">Istota AI: ${esc(conf)} · uprav gramy, ak nesedia.</p>
+        ${res.note ? `<p class="small" style="margin-top:10px">${esc(res.note)}</p>` : ''}
       </div>
       ${items.map((it, i) => {
         const k = it.g / it.base;
         return `<div class="ai-item"><div class="row">
           <input class="input" data-ai-name="${i}" value="${esc(it.name)}" style="flex:1">
           <input class="input grams" data-ai-g="${i}" type="number" inputmode="decimal" value="${r0(it.g)}" aria-label="gramy">
-          <button class="icon-btn" data-ai-del="${i}" aria-label="Odstrániť" style="background:#fff">✕</button></div>
+          <button class="round sm" data-ai-del="${i}" aria-label="Odstrániť">${icon('close', 14, 2.4)}</button></div>
           <div class="small muted" style="margin-top:6px">${r0(it.kcal * k)} kcal · B ${r0(it.p * k)} · S ${r0(it.c * k)} · T ${r0(it.f * k)}
           · <span class="score ${scoreClass(it.score)}">${it.score}</span></div></div>`;
       }).join('')}
-      ${items.length ? '<button class="btn primary" id="ai-save">Uložiť jedlo</button>' : '<div class="empty">AI nenašla žiadne jedlo.</div>'}
+      <p class="small muted" style="margin:4px 0 12px">Ak gramy nesedia, prepíš ich – hodnoty sa prepočítajú.</p>
+      ${items.length ? '<button class="btn primary" id="ai-save">Uložiť</button>' : '<div class="empty">AI nenašla žiadne jedlo.</div>'}
     `);
     document.querySelectorAll('[data-ai-g]').forEach(inp => inp.addEventListener('change', () => {
       items[inp.dataset.aiG].g = Math.max(0, Number(inp.value) || 0);
@@ -565,31 +619,35 @@ function showAIResult(res) {
   draw();
 }
 
+function perGramFromEntry(e) {
+  const g = e.g || 1;
+  return { kcal: e.kcal / g, p: e.p / g, c: e.c / g, f: e.f / g, fib: (e.fib || 0) / g };
+}
+
 function addEntries(list, src) {
   const now = Date.now();
   for (const it of list) {
-    const e = { id: uid(), ts: now, date: curDate, meal: addMeal, src, name: it.name, g: r1(it.g),
+    const e = { id: uid(), ts: now, date: curDate, src, name: it.name, g: r1(it.g),
       kcal: r1(it.kcal), p: r1(it.p), c: r1(it.c), f: r1(it.f), fib: r1(it.fib), score: it.score };
     if (it.thumb) e.thumb = it.thumb;
     S.entries.push(e);
   }
   save();
   closeSheet();
-  show('today');
+  render();
   toast(`Pridané: ${list.length === 1 ? list[0].name : list.length + ' položky'}`);
 }
 
-function openEntry(id) {
+// Úprava gramáže / zmazanie / zjesť znova.
+function openEntry(id, again = false) {
   const e = S.entries.find(x => x.id === id);
   if (!e) return;
-  addMeal = e.meal;
   const per = perGramFromEntry(e);
   openSheet(e.name, `
-    ${mealSelect(e.meal)}
     <label class="field">Množstvo (g)<input class="input" id="e-g" type="number" inputmode="decimal" value="${r0(e.g)}"></label>
-    <p class="small muted" id="e-info"></p>
-    <div class="grid2"><button class="btn danger" id="e-del">Zmazať</button><button class="btn primary" id="e-save">Uložiť</button></div>
-    <div style="margin-top:10px"><button class="btn" id="e-again">Zjesť znova dnes</button></div>
+    <p class="small muted" id="e-info" style="margin-bottom:14px"></p>
+    ${again ? '<button class="btn primary" id="e-add">Pridať</button>'
+      : '<div class="grid2"><button class="btn danger" id="e-del">Zmazať</button><button class="btn primary" id="e-save">Uložiť</button></div>'}
   `);
   const upd = () => {
     const g = Number($('#e-g').value) || 0;
@@ -597,266 +655,122 @@ function openEntry(id) {
   };
   $('#e-g').addEventListener('input', upd);
   upd();
+  const grams = () => {
+    const g = Number($('#e-g').value) || 0;
+    if (g <= 0) toast('Zadaj množstvo.');
+    return g;
+  };
+  if (again) {
+    $('#e-add').onclick = () => {
+      const g = grams();
+      if (g) addEntries([{ name: e.name, g, kcal: per.kcal * g, p: per.p * g, c: per.c * g, f: per.f * g, fib: per.fib * g, score: e.score }], 'znova');
+    };
+    return;
+  }
   $('#e-del').onclick = () => {
     S.entries = S.entries.filter(x => x.id !== id);
     save(); closeSheet(); render(); toast('Zmazané');
   };
   $('#e-save').onclick = () => {
-    const g = Number($('#e-g').value) || 0;
-    if (g <= 0) return toast('Zadaj množstvo.');
-    Object.assign(e, { meal: addMeal, g, kcal: r1(per.kcal * g), p: r1(per.p * g), c: r1(per.c * g), f: r1(per.f * g), fib: r1(per.fib * g) });
+    const g = grams();
+    if (!g) return;
+    Object.assign(e, { g, kcal: r1(per.kcal * g), p: r1(per.p * g), c: r1(per.c * g), f: r1(per.f * g), fib: r1(per.fib * g) });
     save(); closeSheet(); render();
   };
-  $('#e-again').onclick = () => {
-    curDate = todayKey();
-    addMeal = defaultMeal();
-    const g = Number($('#e-g').value) || e.g;
-    addEntries([{ name: e.name, g, kcal: per.kcal * g, p: per.p * g, c: per.c * g, f: per.f * g, fib: per.fib * g, score: e.score }], 'db');
+}
+
+// ---------- Prepojenie so Zdravím (Apple Health cez Skratky) ----------
+// Skratka otvorí appku s údajmi v časti za #, ktorá sa neposiela na server:
+//   https://matejjavorek.github.io/jedlo/#aktivne=650&kroky=12000
+function readHealthFromUrl() {
+  if (!location.hash.includes('aktivne=') && !location.hash.includes('kroky=')) return;
+  const q = new URLSearchParams(location.hash.slice(1));
+  const num = k => {
+    const v = Number(String(q.get(k) || '').replace(',', '.').replace(/[^\d.]/g, ''));
+    return Number.isFinite(v) && v > 0 ? v : 0;
   };
+  const active = Math.min(num('aktivne'), 8000);
+  const steps = Math.min(num('kroky'), 150000);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!active && !steps) return;
+  const d = todayKey();
+  S.health[d] = { active: r0(active), steps: r0(steps), ts: Date.now() };
+  save();
+  curDate = d;
+  render();
+  toast(`Zo Zdravia: ${r0(active)} kcal aktívne${steps ? `, ${r0(steps)} krokov` : ''}`);
 }
 
-// ---------- Štatistiky ----------
-let statDays = 7;
-
-function renderStats() {
-  const el = $('#view-stats');
-  const t = targets();
-  const days = [];
-  for (let i = statDays - 1; i >= 0; i--) days.push(dayKey(addDays(new Date(), -i)));
-  const tots = days.map(d => ({ d, ...dayTotals(d) }));
-  const logged = tots.filter(x => x.n > 0);
-  const inRange = S.entries.filter(e => e.date >= days[0]);
-  const avg = k => logged.length ? logged.reduce((s, x) => s + x[k], 0) / logged.length : 0;
-
-  let html = `<div class="seg">${[7, 30].map(n => `<button data-days="${n}" class="${n === statDays ? 'on' : ''}">${n} dní</button>`).join('')}</div>`;
-
-  if (!logged.length) {
-    el.innerHTML = html + '<div class="card empty">Zatiaľ žiadne záznamy v tomto období. Pridaj prvé jedlo cez <b>+</b>.</div>';
-    return;
-  }
-
-  // Graf kalórií
-  const W = 320, H = 140, pad = 4;
-  const maxV = Math.max(t?.kcal || 0, ...tots.map(x => x.kcal)) * 1.1 || 1;
-  const bw = (W - pad * 2) / tots.length;
-  const bars = tots.map((x, i) => {
-    const h = (x.kcal / maxV) * (H - 18);
-    const ok = t && x.kcal >= t.kcal * 0.9;
-    return `<rect x="${pad + i * bw + bw * 0.15}" y="${H - 14 - h}" width="${bw * 0.7}" height="${h}" rx="3"
-      fill="${ok ? '#1fd67a' : 'var(--orange)'}" opacity="${x.n ? 1 : 0.25}"/>` +
-      (statDays === 7 ? `<text x="${pad + i * bw + bw / 2}" y="${H - 2}" font-size="10" text-anchor="middle" fill="var(--muted)">${parseDay(x.d).toLocaleDateString('sk-SK', { weekday: 'narrow' })}</text>` : '');
-  }).join('');
-  const ty = t ? H - 14 - (t.kcal / maxV) * (H - 18) : null;
-  html += `<div class="card dark chart"><h3>Kalórie</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf kalórií po dňoch">${bars}
-    ${t ? `<line x1="0" x2="${W}" y1="${ty}" y2="${ty}" stroke="var(--text)" stroke-dasharray="4 4" opacity=".5"/>` : ''}</svg>
-    <p class="small muted" style="margin:6px 0 0">Prerušovaná čiara = cieľ ${t ? t.kcal + ' kcal' : ''}. Zelená = splnené (≥ 90 %).</p></div>`;
-
-  // Čísla
-  const pHit = t ? logged.filter(x => x.p >= t.p * 0.9).length : 0;
-  const kHit = t ? logged.filter(x => x.kcal >= t.kcal * 0.9).length : 0;
-  const scoreAll = inRange.reduce((s, e) => s + (e.score || 5) * e.kcal, 0) / (inRange.reduce((s, e) => s + e.kcal, 0) || 1);
-  html += `<div class="card"><h3>Priemer za zapísané dni (${logged.length}/${statDays})</h3><div class="grid2">
-    <div class="stat"><b>${r0(avg('kcal'))}</b><span class="small muted">kcal ${t ? '/ ' + t.kcal : ''}</span></div>
-    <div class="stat"><b>${r0(avg('p'))} g</b><span class="small muted">bielkoviny ${t ? '/ ' + t.p : ''}</span></div>
-    <div class="stat"><b>${t ? kHit + '×' : '–'}</b><span class="small muted">dní splnené kcal</span></div>
-    <div class="stat"><b>${t ? pHit + '×' : '–'}</b><span class="small muted">dní splnené bielkoviny</span></div>
-    <div class="stat"><b><span class="score ${scoreClass(scoreAll)}">${r1(scoreAll)}</span></b><span class="small muted">zdravosť (vážená kcal)</span></div>
-    <div class="stat"><b>${streak()} 🔥</b><span class="small muted">dní v rade</span></div>
-  </div></div>`;
-
-  // Rozloženie jedál
-  const byMeal = Object.fromEntries(MEALS.map(([k]) => [k, 0]));
-  inRange.forEach(e => { byMeal[e.meal] = (byMeal[e.meal] || 0) + e.kcal; });
-  const totK = Object.values(byMeal).reduce((a, b) => a + b, 0) || 1;
-  html += `<div class="card"><h3>Kedy ješ</h3>${MEALS.map(([k, l]) => bar(l, (byMeal[k] / totK) * 100, 100, 'var(--p)', '%')).join('')}</div>`;
-
-  // Top jedlá
-  const cnt = {};
-  inRange.forEach(e => { const k = e.name; cnt[k] = (cnt[k] || 0) + 1; });
-  const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  html += `<div class="card"><h3>Najčastejšie jedlá</h3>${top.map(([n, c]) =>
-    `<div class="row between small" style="padding:4px 0"><span>${esc(n)}</span><span class="chip">${c}×</span></div>`).join('')}</div>`;
-
-  // Návyky – tipy
-  const tips = habitTips({ t, logged, inRange, days, byMeal, totK, pHit, kHit, scoreAll });
-  html += `<div class="card"><h3>Návyky a tipy</h3><ul class="tips">${tips.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
-
-  el.innerHTML = html;
-}
-
-function streak() {
-  const dates = new Set(S.entries.map(e => e.date));
-  let d = new Date();
-  if (!dates.has(dayKey(d))) d = addDays(d, -1);
-  let n = 0;
-  while (dates.has(dayKey(d))) { n++; d = addDays(d, -1); }
-  return n;
-}
-
-function habitTips({ t, logged, inRange, days, byMeal, totK, pHit, kHit, scoreAll }) {
-  const tips = [];
-  const L = logged.length;
-  if (L < days.length) tips.push(`Zapísal si ${L} z ${days.length} dní. Pravidelné zapisovanie je základ – aj odhad je lepší ako nič.`);
-  if (t) {
-    if (kHit < L * 0.7) tips.push(`Kalórie si splnil len ${kHit}/${L} dní. Na priberanie pridaj kalorické jedlá: ovsené vločky s arašidovým maslom, orechy, olivový olej do jedla, mliečny shake.`);
-    else tips.push(`Kalórie si plníš ${kHit}/${L} dní – výborne, drž to. 💪`);
-    if (pHit < L * 0.7) tips.push(`Bielkoviny pod cieľom ${L - pHit}/${L} dní. Daj do každého jedla zdroj bielkovín (mäso, vajcia, tvaroh, skyr, proteín).`);
-    const fibAvg = logged.reduce((s, x) => s + x.fib, 0) / L;
-    if (fibAvg < t.fib * 0.6) tips.push(`Vlákniny máš málo (${r0(fibAvg)} g z ${t.fib} g). Pridaj zeleninu, strukoviny, ovocie a celozrnné pečivo.`);
-  }
-  if (byMeal.ranajky / totK < 0.1 && L >= 3) tips.push('Raňajky skoro vynechávaš. Pri priberaní je ľahšie dať cieľ, keď začneš deň poriadnym jedlom.');
-  const late = inRange.filter(e => new Date(e.ts).getHours() >= 21).length;
-  if (late >= 3) tips.push(`${late}× si jedol po 21:00. Neskoré veľké jedlá môžu zhoršiť spánok a regeneráciu.`);
-  if (scoreAll < 5) tips.push('Priemerná zdravosť je nízka. Nahraď časť fastfoodu a sladkostí plnohodnotnými jedlami – kalórie dáš aj zdravšie.');
-  else if (scoreAll >= 7) tips.push('Ješ prevažne kvalitné potraviny. 👌');
-  const avgMeals = inRange.length / (L || 1);
-  if (avgMeals < 3 && L >= 3) tips.push('Ješ málo položiek denne. Na priberanie pomáha 4–5 jedál denne.');
-  return tips;
-}
-
-// ---------- Váha ----------
-function weightTrend() {
-  const ws = [...S.weights].sort((a, b) => a.date.localeCompare(b.date));
-  if (ws.length < 2) return null;
-  const last = parseDay(ws.at(-1).date);
-  const recent = ws.filter(w => (last - parseDay(w.date)) / 864e5 <= 28);
-  if (recent.length < 2) return null;
-  const span = (last - parseDay(recent[0].date)) / 864e5;
-  if (span < 7) return null;
-  // Lineárna regresia kg vs. deň.
-  const xs = recent.map(w => (parseDay(w.date) - last) / 864e5), ys = recent.map(w => w.kg);
-  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
-  const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
-  const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0) || 1;
-  const perWeek = (num / den) * 7;
-  return { perWeek, pct: (perWeek / my) * 100 };
-}
-
-function renderWeight() {
-  const el = $('#view-weight');
-  const ws = [...S.weights].sort((a, b) => a.date.localeCompare(b.date));
-  let html = `<div class="card"><h3>Zapísať váhu</h3><div class="row">
-    <input class="input" id="w-kg" type="number" step="0.1" inputmode="decimal" placeholder="kg" value="${ws.at(-1)?.kg ?? S.profile.weight ?? ''}" style="margin:0">
-    <button class="btn primary sm" id="w-save" style="padding:11px 18px">Uložiť</button></div>
-    <p class="small muted" style="margin:8px 0 0">Váž sa ráno po toalete, nalačno. Ideálne 2–3× týždenne.</p></div>`;
-
-  if (ws.length >= 2) {
-    const pts = ws.slice(-60);
-    const W = 320, H = 150, P = 24;
-    const min = Math.min(...pts.map(p => p.kg)) - 0.5, max = Math.max(...pts.map(p => p.kg)) + 0.5;
-    const t0 = parseDay(pts[0].date), t1 = parseDay(pts.at(-1).date);
-    const span = Math.max(1, (t1 - t0) / 864e5);
-    const xy = p => [P + ((parseDay(p.date) - t0) / 864e5 / span) * (W - P - 6), 6 + (1 - (p.kg - min) / (max - min)) * (H - 26)];
-    const path = pts.map((p, i) => (i ? 'L' : 'M') + xy(p).map(n => n.toFixed(1)).join(' ')).join(' ');
-    html += `<div class="card dark chart"><h3>Priebeh</h3><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Graf váhy">
-      <text x="0" y="12" font-size="10" fill="var(--muted)">${r1(max)}</text>
-      <text x="0" y="${H - 20}" font-size="10" fill="var(--muted)">${r1(min)}</text>
-      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
-      ${pts.map(p => { const [x, y] = xy(p); return `<circle cx="${x}" cy="${y}" r="3" fill="var(--accent)"/>`; }).join('')}
-      </svg></div>`;
-  }
-
-  const tr = weightTrend();
-  if (tr) {
-    let advice, delta = 0;
-    if (tr.pct < 0.1) { advice = 'Váha stojí alebo klesá. Pridaj ~150 kcal denne.'; delta = 150; }
-    else if (tr.pct < 0.25) { advice = 'Priberáš pomaly. Môžeš pridať ~100 kcal denne.'; delta = 100; }
-    else if (tr.pct <= 0.5) { advice = 'Ideálne tempo na čistý nárast svalov. Nič nemeň. ✅'; }
-    else if (tr.pct <= 0.75) { advice = 'Priberáš trochu rýchlo. Zváž ubrať ~100 kcal.'; delta = -100; }
-    else { advice = 'Priberáš príliš rýchlo – pribúda aj tuk. Uber ~150 kcal denne.'; delta = -150; }
-    html += `<div class="card"><h3>Tempo (posledné 4 týždne)</h3>
-      <p style="margin:0 0 6px"><b>${tr.perWeek >= 0 ? '+' : ''}${tr.perWeek.toFixed(2)} kg / týždeň</b>
-      <span class="muted small">(${tr.pct.toFixed(2)} % hmotnosti, cieľ 0,25–0,5 %)</span></p>
-      <p class="small" style="margin:0 0 10px">${advice}</p>
-      ${delta ? `<button class="btn sm" id="w-apply" data-delta="${delta}">Upraviť cieľ o ${delta > 0 ? '+' : ''}${delta} kcal</button>` : ''}</div>`;
-  } else {
-    html += '<div class="card small muted">Tempo a odporúčania uvidíš po aspoň 7 dňoch záznamov váhy.</div>';
-  }
-
-  if (ws.length) {
-    html += `<div class="card"><h3>Záznamy</h3>${[...ws].reverse().slice(0, 14).map(w =>
-      `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${fmtDay(w.date)}</span>
-        <span><b>${w.kg} kg</b> <button class="icon-btn" data-wdel="${w.date}" aria-label="Zmazať" style="width:32px;height:32px;font-size:14px;margin-left:6px">✕</button></span></div>`).join('')}</div>`;
-  }
-  el.innerHTML = html;
-
-  $('#w-save').onclick = () => {
-    const kg = Number(String($('#w-kg').value).replace(',', '.'));
-    if (!(kg > 20 && kg < 400)) return toast('Zadaj platnú váhu.');
-    const d = todayKey();
-    S.weights = S.weights.filter(w => w.date !== d);
-    S.weights.push({ date: d, kg: r1(kg) });
-    S.profile.weight = r1(kg);
-    save(); render(); toast('Váha uložená');
-  };
-  const ap = $('#w-apply');
-  if (ap) ap.onclick = () => {
-    S.profile.surplus = Number(S.profile.surplus || 0) + Number(ap.dataset.delta);
-    save(); toast(`Nový prebytok: ${S.profile.surplus} kcal`); render();
-  };
-}
-
-// ---------- Profil ----------
-function renderProfile() {
-  const el = $('#view-profile');
+// ---------- Profil (vpravo hore) ----------
+function openProfile() {
   const p = S.profile;
-  const t = targets();
+  const t = targets(todayKey());
   const opt = (val, list) => list.map(([v, l]) => `<option value="${v}" ${String(v) === String(val) ? 'selected' : ''}>${l}</option>`).join('');
-  el.innerHTML = `
-    ${!p.age ? '<div class="warn">Vitaj! 👋 Vyplň údaje, nech ti vypočítam ciele na priberanie.</div>' : ''}
-    <form class="card" id="profile-form">
-      <h3>Moje údaje</h3>
+  const lastH = Object.entries(S.health).sort((a, b) => b[0].localeCompare(a[0]))[0];
+  openSheet('Profil', `
+    <form id="profile-form">
+      <label class="field">Meno<input name="name" value="${esc(p.name)}" autocomplete="given-name"></label>
       <div class="grid2">
         <label class="field">Pohlavie<select name="sex">${opt(p.sex, [['m', 'Muž'], ['f', 'Žena']])}</select></label>
         <label class="field">Vek<input name="age" type="number" inputmode="numeric" value="${p.age ?? ''}"></label>
         <label class="field">Výška (cm)<input name="height" type="number" inputmode="numeric" value="${p.height ?? ''}"></label>
         <label class="field">Váha (kg)<input name="weight" type="number" step="0.1" inputmode="decimal" value="${currentWeight() ?? ''}"></label>
       </div>
-      <label class="field">Aktivita<select name="activity">${opt(p.activity, [
-        [1.375, 'Sedavá práca + tréning 2–3× týždenne'],
-        [1.55, 'Tréning 3–5× týždenne'],
-        [1.725, 'Tréning 6–7× týždenne / fyzická práca'],
-        [1.9, 'Veľmi vysoká (2× denne, ťažká práca)'],
+      <label class="field">Pohyb počas týždňa<select name="activity">${opt(p.activity, [
+        [1.55, 'Sedavá práca + tréning 3–5×'],
+        [1.725, 'Fyzická práca 3–4 dni + tréning/futbal 7×'],
+        [1.9, 'Fyzická práca 5 dní + tréning denne'],
       ])}</select></label>
       <label class="field">Cieľ<select name="goal">${opt([0, 250, 350, 500].includes(Number(p.surplus)) ? p.surplus : 'x', [
         [0, 'Udržať váhu'],
         [250, 'Pomalé priberanie (+250 kcal)'],
-        [350, 'Priberanie svalov (+350 kcal) – odporúčané'],
+        [350, 'Priberanie svalov (+350 kcal)'],
         [500, 'Rýchle priberanie (+500 kcal)'],
-        ['x', `Vlastné (${p.surplus} kcal)`],
+        ['x', `Vlastné (+${p.surplus} kcal)`],
       ])}</select></label>
-      <label class="field">Bielkoviny (g na kg)<input name="proteinPerKg" type="number" step="0.1" inputmode="decimal" value="${p.proteinPerKg}"></label>
       <button class="btn primary">Uložiť</button>
     </form>
-    ${t ? `<div class="card"><h3>Tvoje denné ciele</h3><div class="grid3">
-      <div class="stat"><b>${t.kcal}</b><span class="small muted">kcal</span></div>
-      <div class="stat"><b>${t.p} g</b><span class="small muted">bielkoviny</span></div>
-      <div class="stat"><b>${t.c} g</b><span class="small muted">sacharidy</span></div>
-      <div class="stat"><b>${t.f} g</b><span class="small muted">tuky</span></div>
-      <div class="stat"><b>${t.fib} g</b><span class="small muted">vláknina</span></div>
-      <div class="stat"><b>${t.water / 1000} l</b><span class="small muted">voda</span></div></div>
-      <p class="small muted" style="margin:10px 0 0">Bazálny metabolizmus ${t.bmr} kcal · výdaj ${t.tdee} kcal · prebytok ${p.surplus} kcal.</p></div>` : ''}
-    <div class="card"><h3>AI rozpoznávanie jedla</h3>
-      <label class="field">Anthropic API kľúč<input class="input" id="api-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(getKey())}"></label>
-      <label class="field">Model<select class="input" id="api-model">${opt(p.model, MODELS)}</select></label>
-      <button class="btn" id="key-save">Uložiť kľúč</button>
-      <p class="small muted" style="margin:10px 0 0">Kľúč získaš na console.anthropic.com → API Keys. Ostáva uložený len v tomto zariadení a posiela sa iba do Anthropic API. Nastav si tam mesačný limit výdavkov.</p></div>
-    <div class="card"><h3>Záloha</h3><div class="grid2">
-      <button class="btn" id="exp">⬇️ Export</button><button class="btn" id="imp">⬆️ Import</button></div>
-      <div style="margin-top:10px"><button class="btn danger" id="wipe">Zmazať všetky dáta</button></div>
-      <p class="small muted" style="margin:10px 0 0">Dáta sú len v tomto prehliadači. Raz za čas si sprav export.</p></div>
-    <p class="small muted" style="text-align:center">Odhady AI a databázy sú orientačné.</p>`;
+    ${t ? `<p class="small muted" style="margin:10px 0 0">Dnešný cieľ ${t.kcal} kcal · bielkoviny ${t.p} g · sacharidy ${t.c} g · tuky ${t.f} g.</p>` : ''}
+
+    <h3 class="sub-h">AI na fotky</h3>
+    <input class="input" id="api-key" type="password" autocomplete="off" placeholder="Anthropic API kľúč (sk-ant-…)" value="${esc(getKey())}">
+    <select class="input" id="api-model" style="margin-top:8px">${opt(p.model, MODELS)}</select>
+    <button class="btn" id="key-save" style="margin-top:8px">Uložiť kľúč</button>
+    <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
+
+    <h3 class="sub-h">Prepojenie so Zdravím</h3>
+    <p class="small" style="margin-bottom:8px">${lastH ? `Naposledy: ${parseDay(lastH[0]).toLocaleDateString('sk-SK')} – ${lastH[1].active} kcal aktívne.` : 'Zatiaľ žiadne údaje zo Zdravia.'}</p>
+    <details class="howto"><summary>Ako to nastaviť (5 minút)</summary>
+      <ol>
+        <li>V appke <b>Huawei Health</b> zapni zdieľanie údajov do appky <b>Zdravie</b> (Ja → Nastavenia → zdieľanie údajov; názvy sa môžu líšiť). V Zdraví over, že pod <i>Aktívna energia</i> pribúdajú údaje z Huawei.</li>
+        <li>Otvor appku <b>Skratky</b> → <b>+</b> → názov „Jedlo“.</li>
+        <li>Pridaj akciu <b>Nájsť vzorky zdravia</b>: Typ = <i>Aktívna energia</i>, Dátum začiatku = <i>Dnes</i>, Zoskupiť podľa = <i>Deň</i>.</li>
+        <li>Pridaj akciu <b>Získať podrobnosti vzoriek zdravia</b> → <i>Hodnota</i>. Výsledok premenuj na „Aktívne“.</li>
+        <li>To isté zopakuj pre <i>Kroky</i> → premenuj na „Kroky“.</li>
+        <li>Ak vychádza viac čísel naraz, pridaj za ne akciu <b>Vypočítať štatistiky</b> → <i>Súčet</i>.</li>
+        <li>Pridaj akciu <b>Otvoriť URL</b>:<br><code>https://matejjavorek.github.io/jedlo/#aktivne=[Aktívne]&amp;kroky=[Kroky]</code></li>
+        <li>Pri prvom spustení povoľ Skratkám čítať Zdravie.</li>
+        <li>Skratku pridaj na plochu (Zdieľať → Pridať na plochu) a otváraj appku <b>len cez ňu</b>.</li>
+      </ol>
+      <p class="small muted">Skratka otvára appku v Safari, ktoré má iné úložisko ako ikona „Pridať na plochu“ zo Safari. Preto používaj stále rovnakú cestu – skratku. Ak si už niečo zapísal inde, prenes to cez Export/Import.</p>
+      <p class="small muted">Keď Zdravie ukáže, že si spálil viac, ako ráta profil, denný cieľ sa sám zvýši.</p>
+    </details>
+
+    <h3 class="sub-h">Záloha</h3>
+    <div class="grid2"><button class="btn" id="exp">Export</button><button class="btn" id="imp">Import</button></div>
+    <button class="btn danger" id="wipe" style="margin-top:10px">Zmazať všetky dáta</button>
+  `);
 
   $('#profile-form').onsubmit = ev => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
     const num = k => { const v = Number(String(fd.get(k)).replace(',', '.')); return v > 0 ? v : null; };
+    p.name = String(fd.get('name') || '').trim();
     p.sex = fd.get('sex');
     p.age = num('age');
     p.height = num('height');
     p.activity = Number(fd.get('activity'));
     if (fd.get('goal') !== 'x') p.surplus = Number(fd.get('goal'));
-    p.proteinPerKg = num('proteinPerKg') || 2;
     const w = num('weight');
     if (w && w !== currentWeight()) {
       p.weight = w;
@@ -864,7 +778,7 @@ function renderProfile() {
       S.weights = S.weights.filter(x => x.date !== d);
       S.weights.push({ date: d, kg: r1(w) });
     }
-    save(); render(); toast('Profil uložený');
+    save(); closeSheet(); render(); toast('Profil uložený');
   };
   $('#key-save').onclick = () => {
     setKey($('#api-key').value.trim());
@@ -882,46 +796,32 @@ function renderProfile() {
   $('#imp').onclick = () => $('#import-input').click();
   $('#wipe').onclick = () => {
     if (!confirm('Naozaj zmazať všetky jedlá, váhu a profil? Toto sa nedá vrátiť.')) return;
-    S = defaultState(); save(); render(); toast('Všetko zmazané');
+    S = defaultState(); save(); closeSheet(); render(); toast('Všetko zmazané');
   };
 }
 
 // ---------- Udalosti ----------
 document.addEventListener('click', ev => {
-  const t = ev.target.closest('button, a');
+  const t = ev.target.closest('button');
   if (!t) return;
   const d = t.dataset;
-  if (d.view) show(d.view);
-  else if (d.go) show(d.go);
-  else if (d.water) {
-    S.water[curDate] = Math.max(0, (S.water[curDate] || 0) + Number(d.water));
-    save(); render();
-  } else if (d.addMeal) { ev.preventDefault(); openAdd(d.addMeal); }
+  if (d.act === 'add') openAdd();
+  else if (d.act === 'photo') $('#photo-input').click();
+  else if (d.act === 'text') openTextAI();
+  else if (d.act === 'water') openWater();
+  else if (d.act === 'weight') openWeight();
+  else if (d.act === 'profile') openProfile();
+  else if (d.drink) addWater(Number(d.drink));
   else if (d.entry) openEntry(d.entry);
-  else if (d.meal) {
-    addMeal = d.meal;
-    document.querySelectorAll('#meal-seg button').forEach(b => b.classList.toggle('on', b.dataset.meal === addMeal));
-  } else if (d.food) {
-    const f = FOODS[Number(d.food)];
-    openPortion({ name: f[0], per: { kcal: f[1] / 100, p: f[2] / 100, c: f[3] / 100, f: f[4] / 100, fib: f[5] / 100 }, score: f[6], g: f[7] });
-  } else if (d.recent) {
-    const e = S.entries.find(x => x.id === d.recent);
-    if (e) openPortion({ name: e.name, per: perGramFromEntry(e), score: e.score, g: e.g });
-  } else if (d.days) { statDays = Number(d.days); render(); }
+  else if (d.recent) openEntry(d.recent, true);
   else if (d.wdel) {
     S.weights = S.weights.filter(w => w.date !== d.wdel);
-    save(); render();
-  } else if (t.id === 'act-photo') $('#photo-input').click();
-  else if (t.id === 'act-text') openTextAI();
-  else if (t.id === 'act-custom') openCustom();
+    save(); render(); openWeight();
+  }
 });
 
-document.addEventListener('input', ev => {
-  if (ev.target.id === 'food-search') renderSearch(ev.target.value);
-});
-
-$('#open-add').onclick = () => openAdd();
-$('#close-add').onclick = closeSheet;
+$('#open-profile').onclick = openProfile;
+$('#close-sheet').onclick = closeSheet;
 $('#sheet-bg').addEventListener('click', ev => { if (ev.target.id === 'sheet-bg') closeSheet(); });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#sheet-bg').hidden) closeSheet(); });
 
@@ -951,13 +851,15 @@ $('#import-input').addEventListener('change', async ev => {
     if (!Array.isArray(data.entries)) throw new Error();
     const d = defaultState();
     S = { ...d, ...data, profile: { ...d.profile, ...data.profile } };
-    save(); render(); toast('Záloha načítaná');
+    save(); closeSheet(); render(); toast('Záloha načítaná');
   } catch {
     toast('Neplatný súbor zálohy.');
   }
 });
 
-// Po polnoci prepni „Dnes“ na nový deň, ak appka ostala otvorená.
+window.addEventListener('hashchange', readHealthFromUrl);
+
+// Po polnoci prepni na nový deň, ak appka ostala otvorená.
 let lastToday = todayKey();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
@@ -973,4 +875,6 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-show(S.profile.age ? 'today' : 'profile');
+render();
+readHealthFromUrl();
+if (!S.profile.age) openProfile();
