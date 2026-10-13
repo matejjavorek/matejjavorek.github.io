@@ -207,6 +207,8 @@ function render() {
       : 'Pridaj, čo si zjedol.'}</span></div>
   </div>`;
 
+  html += dayMeter(curDate, t, tot);
+
   // Voda
   const water = S.water[curDate] || 0;
   const wt = t?.water || 2500;
@@ -245,6 +247,109 @@ function render() {
   html += recipesCard();
 
   $('#page').innerHTML = html;
+}
+
+// ---------- Ako jem: ukazovateľ od červenej (nezdravo) po zelenú (zdravo) ----------
+// Skóre 0–100: kvalita jedál 40 %, kalórie 25 %, bielkoviny 25 %, vláknina 10 %.
+// Pri dnešku sa kalórie a bielkoviny porovnávajú s tým, koľko by malo byť zjedené do tejto hodiny.
+function dayScore(date, t, tot) {
+  if (!tot.n) return null;
+  const now = new Date();
+  const expected = date < todayKey() ? 1 : Math.min(1, Math.max(0.25, (now.getHours() + now.getMinutes() / 60 - 7) / 14));
+  const fit = (val, target) => {
+    if (!target) return 0.5;
+    const ratio = val / (target * expected);
+    return ratio >= 0.9 && ratio <= 1.15 ? 1 : ratio < 0.9 ? Math.max(0, ratio / 0.9) : Math.max(0, 1 - (ratio - 1.15) * 1.5);
+  };
+  const parts = {
+    quality: ((tot.score ?? 5) - 1) / 9,
+    kcal: fit(tot.kcal, t?.kcal),
+    protein: fit(tot.p, t?.p),
+    fiber: t ? Math.min(1, tot.fib / (t.fib * expected)) : 0.5,
+  };
+  const score = Math.round(100 * (0.4 * parts.quality + 0.25 * parts.kcal + 0.25 * parts.protein + 0.1 * parts.fiber));
+  const tips = {
+    quality: 'veľa spracovaného jedla',
+    kcal: tot.kcal < (t?.kcal || 0) * expected ? 'málo kalórií na priberanie' : 'veľa kalórií naraz',
+    protein: 'málo bielkovín',
+    fiber: 'málo vlákniny – pridaj zeleninu',
+  };
+  const weakest = Object.entries(parts).sort((a, b) => a[1] - b[1])[0];
+  return { score, tip: weakest[1] < 0.8 ? tips[weakest[0]] : 'drž to tak' };
+}
+
+function verdict(score) {
+  if (score < 35) return 'Nezdravo';
+  if (score < 55) return 'Dá sa to zlepšiť';
+  if (score < 75) return 'Dobre';
+  return 'Výborne';
+}
+
+// Odtlačok jedál dňa – AI hodnotenie platí, len kým sa jedlá nezmenia.
+function dayHash(date) {
+  return S.entries.filter(e => e.date === date).map(e => e.id + ':' + e.g).join('|');
+}
+
+function dayMeter(date, t, tot) {
+  const calc = dayScore(date, t, tot);
+  const ai = S.aiDay?.[date];
+  const useAi = ai && ai.hash === dayHash(date);
+  const score = useAi ? ai.score : calc?.score;
+  return `<div class="card dark meter-card">
+    <div class="meter-head"><h3>Ako dnes ješ</h3>${score != null ? `<span class="meter-score">${score}<small>/100</small></span>` : ''}</div>
+    <div class="meter" role="img" aria-label="${score != null ? `Hodnotenie dňa ${score} zo 100: ${verdict(score)}` : 'Zatiaľ bez hodnotenia'}">
+      ${score != null ? `<i style="left:${Math.min(98, Math.max(2, score))}%"></i>` : ''}
+    </div>
+    <div class="meter-ends"><span>Nezdravo</span><span>Zdravo</span></div>
+    <p class="meter-text">${score == null ? 'Zapíš jedlo a ukážem, ako ti ide deň.'
+      : `<b>${verdict(score)}</b> · ${esc(useAi ? ai.text : calc.tip)}${useAi ? ' <span class="chip ai">AI</span>' : ''}`}</p>
+    ${score != null ? `<button class="btn sm ghost-dark" data-act="ai-day">${useAi ? 'Zhodnotiť znova s AI' : 'Zhodnotiť deň s AI'}</button>` : ''}
+  </div>`;
+}
+
+const DAY_SCHEMA = {
+  type: 'object',
+  properties: {
+    score: { type: 'integer' },
+    text: { type: 'string' },
+  },
+  required: ['score', 'text'],
+  additionalProperties: false,
+};
+
+async function analyzeDay(date) {
+  const t = targets(date);
+  const items = S.entries.filter(e => e.date === date).sort((a, b) => a.ts - b.ts);
+  const tot = dayTotals(date);
+  const list = items.map(e => `${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} ${e.name}${e.g ? `, ${r0(e.g)} g` : ''}: ${r0(e.kcal)} kcal, B ${r0(e.p)} g, S ${r0(e.c)} g, T ${r0(e.f)} g, vláknina ${r1(e.fib)} g`).join('\n');
+  const isToday = date === todayKey();
+  return callClaude({
+    system: `Si výživový tréner športovca, ktorý chce nabrať svaly. Zhodnoť, ako zdravo a vhodne sa v daný deň stravoval.
+score: celé číslo 0–100 (0 = veľmi nezdravo, 50 = priemer, 100 = výborne). Zohľadni kvalitu potravín, bielkoviny, kalórie vzhľadom na cieľ, vlákninu, zeleninu a rozloženie jedál.${isToday ? ' Deň ešte neskončil – nehodnoť prísne to, čo ešte stihne zjesť.' : ''}
+text: jedna krátka veta po slovensky (max. 12 slov) – čo je najlepšie alebo čo zlepšiť.`,
+    content: [{ type: 'text', text: `${isToday ? `Je ${new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })}, deň ešte prebieha.` : 'Deň už skončil.'}
+Cieľ: ${t ? `${t.kcal} kcal, ${t.p} g bielkovín, ${t.fib} g vlákniny` : 'neznámy'}.
+Spolu: ${r0(tot.kcal)} kcal, B ${r0(tot.p)} g, S ${r0(tot.c)} g, T ${r0(tot.f)} g, vláknina ${r0(tot.fib)} g.
+Jedlá:\n${list}` }],
+    schema: DAY_SCHEMA,
+    effort: 'low',
+  });
+}
+
+async function runDayAI(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Hodnotím…';
+  try {
+    const res = await analyzeDay(curDate);
+    S.aiDay = S.aiDay || {};
+    S.aiDay[curDate] = { score: Math.min(100, Math.max(0, Math.round(res.score))), text: res.text, hash: dayHash(curDate), ts: Date.now() };
+    save();
+    render();
+  } catch (err) {
+    toast(err.message);
+    if (!getKey()) openProfile();
+    render();
+  }
 }
 
 function weekStats() {
@@ -665,25 +770,16 @@ const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu ide
 - note: 1 krátka veta po slovensky – zhodnoť jedlo vzhľadom na cieľ používateľa.
 - Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.`;
 
-async function analyzeFood({ image, text }) {
+async function callClaude({ system, content, schema, effort = 'medium' }) {
   const key = getKey();
   if (!key) throw new Error('Chýba API kľúč. Zadaj ho v profile (vpravo hore).');
   const model = S.profile.model || MODELS[0][0];
-  const t = targets(todayKey());
-  const goal = Number(S.profile.surplus) > 0 ? 'priberať svalovú hmotu' : 'udržať váhu';
-  const content = [];
-  if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } });
-  content.push({
-    type: 'text',
-    text: `Cieľ používateľa: ${goal}${t ? ` (${t.kcal} kcal, ${t.p} g bielkovín denne)` : ''}.\n` +
-      (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.'),
-  });
   const body = {
     model,
     max_tokens: 8000,
-    system: AI_SYSTEM,
+    system,
     messages: [{ role: 'user', content }],
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: AI_SCHEMA } },
+    output_config: { effort, format: { type: 'json_schema', schema } },
   };
   const headers = {
     'content-type': 'application/json',
@@ -704,11 +800,24 @@ async function analyzeFood({ image, text }) {
     if (res.status === 429) throw new Error('Príliš veľa požiadaviek, skús o chvíľu.');
     throw new Error(`Chyba API (${res.status}): ${msg}`);
   }
-  if (data.stop_reason === 'refusal') throw new Error('AI odmietla analýzu. Skús iný popis alebo fotku.');
+  if (data.stop_reason === 'refusal') throw new Error('AI odmietla odpovedať. Skús znova.');
   if (data.stop_reason === 'max_tokens') throw new Error('Odpoveď bola príliš dlhá. Skús znova.');
   const block = (data.content || []).find(b => b.type === 'text');
   if (!block) throw new Error('Prázdna odpoveď od AI.');
   return JSON.parse(block.text);
+}
+
+async function analyzeFood({ image, text }) {
+  const t = targets(todayKey());
+  const goal = Number(S.profile.surplus) > 0 ? 'priberať svalovú hmotu' : 'udržať váhu';
+  const content = [];
+  if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } });
+  content.push({
+    type: 'text',
+    text: `Cieľ používateľa: ${goal}${t ? ` (${t.kcal} kcal, ${t.p} g bielkovín denne)` : ''}.\n` +
+      (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.'),
+  });
+  return callClaude({ system: AI_SYSTEM, content, schema: AI_SCHEMA });
 }
 
 function loadImage(file) {
@@ -1043,6 +1152,7 @@ document.addEventListener('click', ev => {
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
   else if (d.act === 'cook') cookStart();
+  else if (d.act === 'ai-day') runDayAI(t);
   else if (d.act === 'cook-results') cookResults();
   else if (d.act === 'unlock-paste') unlockFromClipboard();
   else if (d.meal) { wiz.meal = d.meal; cookFridge(); }
