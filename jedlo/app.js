@@ -109,6 +109,7 @@ const ICON = {
   pen: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   drop: '<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   minus: '<path d="M5 12h14"/>',
   left: '<path d="M15 5l-7 7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
@@ -245,6 +246,7 @@ function render() {
   }
   html += weekStats();
   html += recipesCard();
+  html += planCard();
 
   $('#page').innerHTML = html;
 }
@@ -610,6 +612,199 @@ function openRecipe(id, back = null) {
   fillPhotos($('#sheet-body'));
 }
 
+// ---------- Plán jedál a nákup (Kaufland / Jednota) ----------
+// Appka vyberie kandidátov z kuchárky, Claude z nich poskladá plán (to isté jedlo max. 2 dni po sebe)
+// a nákupný zoznam s odhadom cien. Ceny sú odhad, nie z letákov.
+const PLAN_MEALS = [
+  ['ranajky', 'Raňajky', ['snidane', 'predzapas']],
+  ['obed', 'Obed', ['hlavni']],
+  ['vecera', 'Večera', ['hlavni']],
+  ['snack', 'Snack / sladké', ['svaciny', 'dezerty']],
+];
+const PLAN_PREFS = [
+  ['sladke', 'Sladké', r => /čokol|banán|lívan|palačin|kaše|brownie|koláč|muffin|smoothie|overnight|dezert|tiramisu|perník|buchta|bábovk|vafle|mugcake/i.test(r.title)],
+  ['kuracie', 'Kuracie', r => r.req.some(a => a.includes('kuracie'))],
+  ['hovadzie', 'Hovädzie', r => r.req.some(a => a.includes('hovadzie'))],
+  ['ryby', 'Ryby', r => r.req.some(a => a.some(x => ['losos', 'tuniak', 'ryba', 'krevety'].includes(x)))],
+  ['cestoviny', 'Cestoviny', r => r.req.some(a => a.includes('cestoviny'))],
+  ['ryza', 'Ryža', r => r.req.some(a => a.includes('ryza'))],
+  ['bezmasa', 'Bez mäsa', r => !r.req.some(a => a.some(x => ['kuracie', 'morcacie', 'hovadzie', 'bravcove', 'sunka', 'losos', 'tuniak', 'ryba', 'krevety'].includes(x)))],
+  ['rychle', 'Rýchle (do 20 min)', r => r.time && r.time <= 20],
+  ['mealprep', 'Meal prep', r => r.prep],
+];
+const planForm = { days: 3, meals: ['ranajky', 'obed', 'vecera'], people: 1, budget: 30, prefs: [], wish: '' };
+
+function planCard() {
+  const p = S.mealPlan;
+  const sub = p
+    ? `${p.form.days} ${p.form.days < 5 ? 'dni' : 'dní'} · ${p.form.people} ${p.form.people === 1 ? 'osoba' : p.form.people < 5 ? 'osoby' : 'osôb'} · odhad ${eur(p.result.total_best)} z ${eur(p.form.budget)}`
+    : 'Zadaj rozpočet a počet dní – poskladám jedlá aj nákup.';
+  return `<button class="cook-hero" data-act="plan"><span><b>Plán a nákup</b><span>${sub}</span></span>${icon('right', 22, 2.4)}</button>`;
+}
+
+function eur(n) { return (Number(n) || 0).toLocaleString('sk-SK', { style: 'currency', currency: 'EUR' }); }
+
+function openPlan() {
+  if (!BOOK) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
+  if (S.mealPlan) return showPlan();
+  planStep1();
+}
+
+// Krok 1: dni, jedlá, ľudia, rozpočet, chute – všetko ťukaním.
+function planStep1() {
+  openSheet('', '');
+  wizHead('Nový plán', S.mealPlan ? showPlan : null);
+  const seg = (name, opts, cur) => `<div class="seg">${opts.map(([v, l]) =>
+    `<button data-pf="${name}" data-v="${v}" class="${String(v) === String(cur) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const allMeals = planForm.meals.length === PLAN_MEALS.length;
+  $('#sheet-body').innerHTML = `
+    <h3 class="sub-h" style="margin-top:0">Na koľko dní</h3>
+    ${seg('days', [[2, '2'], [3, '3'], [5, '5'], [7, 'Týždeň']], planForm.days)}
+    <h3 class="sub-h">Ktoré jedlá</h3>
+    <div class="chips"><button class="chip-btn ${allMeals ? 'on' : ''}" data-pm="all">Celý deň</button>${PLAN_MEALS.map(([k, l]) =>
+      `<button class="chip-btn ${planForm.meals.includes(k) && !allMeals ? 'on' : ''}" data-pm="${k}">${l}</button>`).join('')}</div>
+    <h3 class="sub-h">Pre koľko ľudí</h3>
+    ${seg('people', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5+']], planForm.people)}
+    <h3 class="sub-h">Rozpočet na celý nákup</h3>
+    <div class="row"><input class="input" id="plan-budget" type="number" inputmode="decimal" min="1" value="${planForm.budget}" style="flex:1"><span class="muted">€</span></div>
+    <h3 class="sub-h">Na čo máš chuť</h3>
+    <div class="chips">${PLAN_PREFS.map(([k, l]) => `<button class="chip-btn ${planForm.prefs.includes(k) ? 'on' : ''}" data-pp="${k}">${l}</button>`).join('')}</div>
+    <input class="input" id="plan-wish" placeholder="Niečo navyše? napr. bez húb, veľa ovocia" value="${esc(planForm.wish)}" style="margin-top:10px">
+    <div class="sticky-cta"><button class="btn primary" data-act="plan-go">Poskladať plán a nákup</button></div>`;
+  $('#plan-budget').addEventListener('input', e => { planForm.budget = Number(e.target.value) || 0; });
+  $('#plan-wish').addEventListener('input', e => { planForm.wish = e.target.value; });
+}
+
+function planCandidates() {
+  const picked = new Map();
+  const prefs = PLAN_PREFS.filter(([k]) => planForm.prefs.includes(k));
+  for (const [k, , cats] of PLAN_MEALS) {
+    if (!planForm.meals.includes(k)) continue;
+    const pool = BOOK.recipes.filter(r => cats.includes(r.cat) && r.kcal)
+      .map(r => ({ r, s: prefs.reduce((s, [, , f]) => s + (f(r) ? 2 : 0), 0) + Math.random() * 1.5 }))
+      .sort((a, b) => b.s - a.s).slice(0, k === 'vecera' ? 15 : 22);
+    pool.forEach(({ r }) => picked.set(r.id, r));
+  }
+  return [...picked.values()];
+}
+
+const PLAN_SCHEMA = {
+  type: 'object',
+  properties: {
+    days: { type: 'array', items: { type: 'object', properties: {
+      day: { type: 'integer' },
+      meals: { type: 'array', items: { type: 'object', properties: {
+        meal: { type: 'string', enum: ['ranajky', 'obed', 'vecera', 'snack'] },
+        recipe_id: { type: 'integer' },
+        note: { type: 'string' },
+      }, required: ['meal', 'recipe_id', 'note'], additionalProperties: false } },
+    }, required: ['day', 'meals'], additionalProperties: false } },
+    shopping: { type: 'array', items: { type: 'object', properties: {
+      item: { type: 'string' },
+      amount: { type: 'string' },
+      kaufland: { type: 'number' },
+      jednota: { type: 'number' },
+    }, required: ['item', 'amount', 'kaufland', 'jednota'], additionalProperties: false } },
+    pantry: { type: 'array', items: { type: 'string' } },
+    summary: { type: 'string' },
+  },
+  required: ['days', 'shopping', 'pantry', 'summary'],
+  additionalProperties: false,
+};
+
+async function generatePlan() {
+  const f = { ...planForm, meals: [...planForm.meals], prefs: [...planForm.prefs] };
+  const t = targets(todayKey());
+  const cands = planCandidates();
+  const line = r => `#${r.id} | ${r.title} | ${BOOK.cats.find(c => c.id === r.cat)?.label} | recept na ${r.portions} porc. | ${r0(r.kcal)} kcal, B ${r0(r.p)} g / porcia | ${r.time || '?'} min${r.prep ? ' | meal prep' : ''}\n  suroviny: ${r.ing.filter(l => !/:$/.test(l)).map(l => l.slice(0, 70)).slice(0, 16).join('; ')}`;
+  const mealNames = PLAN_MEALS.filter(([k]) => f.meals.includes(k)).map(([k, l]) => `${k} (${l})`).join(', ');
+  const prefs = PLAN_PREFS.filter(([k]) => f.prefs.includes(k)).map(([, l]) => l).join(', ');
+  const res = await callClaude({
+    system: `Si plánovač jedál a nákupov pre športovca na Slovensku, ktorý chce nabrať svaly. Recepty sú z českej Športovej kuchárky.
+Pravidlá plánu:
+- Použi IBA recepty zo zoznamu (recipe_id). Každý deň naplánuj presne zvolené jedlá.
+- To isté jedlo smie byť najviac 2 dni po sebe (uvarí sa raz, zje sa 2×), nikdy 3×. Obed a večera v ten istý deň nech sú rôzne.
+- Strieda chute a suroviny, rešpektuj preferencie. Zdravé, ale chutné; ak chce sladké, zaraď sladké raňajky alebo snack.
+- Šetri peniaze: opakuj suroviny naprieč receptami (jedno balenie na viac jedál), sezónne a lacné potraviny. Drž sa rozpočtu.
+- note: krátko, napr. "uvar 4 porcie – aj na zajtra" alebo "zvyšok zo včera". Inak prázdny reťazec.
+Nákupný zoznam:
+- Spoj suroviny zo všetkých jedál pre zadaný počet ľudí, zaokrúhli na bežné balenia v slovenských obchodoch (napr. "1 kg", "500 g", "10 ks", "1 l").
+- Názvy po slovensky. Soľ, korenie, olej, ocot a koreniny daj do pantry (veci, ktoré asi má doma), nie do shopping.
+- Ak niečo už má doma (zoznam nižšie), nekupuj to.
+- kaufland a jednota: odhad ceny celého balenia v eurách podľa bežných cien v Kauflande a COOP Jednote na Slovensku v roku 2026. Jednota býva o niečo drahšia.
+summary: 1–2 vety po slovensky – či sa plán zmestí do rozpočtu a kde sa oplatí nakúpiť.`,
+    content: [{ type: 'text', text: `Počet dní: ${f.days}. Jedlá: ${mealNames}. Počet ľudí: ${f.people}. Rozpočet na celý nákup: ${f.budget} €.
+${t ? `Denný cieľ používateľa: ${t.kcal} kcal, ${t.p} g bielkovín.` : ''}
+Preferencie: ${prefs || 'žiadne'}${f.wish ? `. Navyše: ${f.wish}` : ''}.
+Doma už má: ${S.fridge.length ? S.fridge.map(chipLabel).join(', ') : 'nič nezadané'}.
+
+Recepty na výber:
+${cands.map(line).join('\n')}` }],
+    schema: PLAN_SCHEMA,
+    effort: 'medium',
+    maxTokens: 20000,
+  });
+  const ids = new Set(BOOK.recipes.map(r => r.id));
+  res.days = (res.days || []).map(d => ({ ...d, meals: d.meals.filter(m => ids.has(m.recipe_id)) }));
+  res.shopping = (res.shopping || []).map(it => ({ ...it, done: false }));
+  const sum = k => res.shopping.reduce((s, it) => s + (Number(it[k]) || 0), 0);
+  res.total_kaufland = sum('kaufland');
+  res.total_jednota = sum('jednota');
+  res.total_best = res.shopping.reduce((s, it) => s + Math.min(Number(it.kaufland) || 0, Number(it.jednota) || 0), 0);
+  return { form: f, result: res, ts: Date.now() };
+}
+
+async function runPlan(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Skladám plán… (do minúty)';
+  try {
+    S.mealPlan = await generatePlan();
+    save();
+    render();
+    showPlan();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Skúsiť znova';
+    toast(err.message || 'Niečo sa pokazilo.');
+    if (!getKey()) { closeSheet(); openProfile(); }
+  }
+}
+
+let planTab = 'plan';
+function showPlan() {
+  const { form: f, result: r } = S.mealPlan;
+  if ($('#sheet-bg').hidden) openSheet('', '');
+  wizHead('Plán a nákup', null);
+  const over = r.total_best > f.budget;
+  const mealLabel = k => PLAN_MEALS.find(m => m[0] === k)?.[1] || k;
+  const title = id => BOOK?.recipes.find(x => x.id === id)?.title || 'Recept';
+  const cheaper = it => (Number(it.kaufland) || 0) <= (Number(it.jednota) || 0) ? 'kaufland' : 'jednota';
+  const tabs = `<div class="seg"><button data-ptab="plan" class="${planTab === 'plan' ? 'on' : ''}">Jedlá</button><button data-ptab="shop" class="${planTab === 'shop' ? 'on' : ''}">Nákup</button></div>`;
+  const head = `<div class="ai-sum"><div class="grid3">
+      <div><b>${eur(r.total_best)}</b><div class="lbl">najlacnejšie</div></div>
+      <div><b>${eur(f.budget)}</b><div class="lbl">rozpočet</div></div>
+      <div><b class="${over ? 'bad' : 'good'}">${over ? '−' + eur(r.total_best - f.budget) : eur(f.budget - r.total_best)}</b><div class="lbl">${over ? 'nad rozpočet' : 'ostáva'}</div></div></div>
+      ${r.summary ? `<p class="small" style="margin-top:10px">${esc(r.summary)}</p>` : ''}</div>`;
+  let body;
+  if (planTab === 'plan') {
+    body = r.days.map(d => `<h3 class="sub-h">Deň ${d.day}</h3><div class="list">${d.meals.map(m => `
+      <button class="entry" data-plan-recipe="${m.recipe_id}"><div class="info"><div class="small muted">${mealLabel(m.meal)}</div>
+        <div class="name">${esc(title(m.recipe_id))}</div>${m.note ? `<div class="small muted">${esc(m.note)}</div>` : ''}</div>${icon('right', 16, 2.2)}</button>`).join('')}</div>`).join('');
+  } else {
+    const items = r.shopping.map((it, i) => ({ it, i, best: cheaper(it) }));
+    const group = store => items.filter(x => x.best === store);
+    const row = ({ it, i, best }) => `<button class="shop-item ${it.done ? 'done' : ''}" data-shop="${i}">
+        <span class="check">${it.done ? icon('check', 14, 3) : ''}</span>
+        <span class="info"><span class="name">${esc(it.item)}</span><span class="small muted">${esc(it.amount)}</span></span>
+        <span class="prices"><b>${eur(it[best])}</b><span class="small muted">${best === 'kaufland' ? 'Jednota' : 'Kaufland'} ${eur(it[best === 'kaufland' ? 'jednota' : 'kaufland'])}</span></span></button>`;
+    body = [['kaufland', 'Kaufland'], ['jednota', 'Jednota']].map(([k, l]) => group(k).length
+      ? `<h3 class="sub-h">${l} <span>· ${eur(group(k).reduce((s, x) => s + (Number(x.it[k]) || 0), 0))}</span></h3><div class="list">${group(k).map(row).join('')}</div>` : '').join('')
+      + `<p class="small muted" style="margin-top:14px">Všetko v Kauflande: ${eur(r.total_kaufland)} · všetko v Jednote: ${eur(r.total_jednota)}.<br>Ceny sú odhad podľa bežných cien, nie z aktuálneho letáku.</p>`
+      + (r.pantry?.length ? `<h3 class="sub-h">Asi máš doma</h3><p class="small muted">${r.pantry.map(esc).join(', ')}</p>` : '');
+  }
+  $('#sheet-body').innerHTML = head + tabs + body + `<button class="btn" data-act="plan-new" style="margin-top:20px">Nový plán</button>`;
+}
+
 function eatRecipe(id) {
   const r = BOOK.recipes.find(x => x.id === Number(id));
   if (!r?.kcal) return;
@@ -769,13 +964,13 @@ const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu ide
 - note: 1 krátka veta po slovensky – zhodnoť jedlo vzhľadom na cieľ používateľa.
 - Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.`;
 
-async function callClaude({ system, content, schema, effort = 'medium' }) {
+async function callClaude({ system, content, schema, effort = 'medium', maxTokens = 8000 }) {
   const key = getKey();
   if (!key) throw new Error('Chýba API kľúč. Zadaj ho v profile (vpravo hore).');
   const model = S.profile.model || MODELS[0][0];
   const body = {
     model,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content }],
     output_config: { effort, format: { type: 'json_schema', schema } },
@@ -1151,6 +1346,23 @@ document.addEventListener('click', ev => {
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
   else if (d.act === 'cook') cookStart();
+  else if (d.act === 'plan') openPlan();
+  else if (d.act === 'plan-new') planStep1();
+  else if (d.act === 'plan-go') {
+    if (!planForm.meals.length) return toast('Vyber aspoň jedno jedlo.');
+    if (!(planForm.budget > 0)) return toast('Zadaj rozpočet.');
+    runPlan(t);
+  }
+  else if (d.pf) { planForm[d.pf] = Number(d.v); t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === t)); }
+  else if (d.pm) {
+    if (d.pm === 'all') planForm.meals = planForm.meals.length === PLAN_MEALS.length ? [] : PLAN_MEALS.map(m => m[0]);
+    else planForm.meals = planForm.meals.length === PLAN_MEALS.length ? [d.pm] : planForm.meals.includes(d.pm) ? planForm.meals.filter(x => x !== d.pm) : [...planForm.meals, d.pm];
+    planStep1();
+  }
+  else if (d.pp) { planForm.prefs = planForm.prefs.includes(d.pp) ? planForm.prefs.filter(x => x !== d.pp) : [...planForm.prefs, d.pp]; t.classList.toggle('on'); }
+  else if (d.ptab) { planTab = d.ptab; showPlan(); }
+  else if (d.shop) { const it = S.mealPlan.result.shopping[Number(d.shop)]; it.done = !it.done; save(); showPlan(); }
+  else if (d.planRecipe) openRecipe(d.planRecipe, showPlan);
   else if (d.act === 'ai-day') runDayAI(t);
   else if (d.act === 'cook-results') cookResults();
   else if (d.act === 'unlock-paste') unlockFromClipboard();
