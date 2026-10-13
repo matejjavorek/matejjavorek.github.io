@@ -194,7 +194,7 @@ function render() {
   // Kalórie a makrá
   const left = t ? r0(t.kcal - tot.kcal) : null;
   html += `<div class="card dark"><div class="ring-wrap">
-    <div class="ring">${ring(tot.kcal, t?.kcal, '#1fd67a', '#b6ff5a', 'rk')}
+    <div class="ring">${ring(tot.kcal, t?.kcal, '#30d158', '#a4f566', 'rk')}
       <div class="center"><span class="big">${r0(tot.kcal)}</span><span class="small muted">${t ? 'z ' + t.kcal + ' kcal' : 'kcal'}</span></div></div>
     <div class="bars">
       ${bar('Bielkoviny', tot.p, t?.p, 'var(--p)')}
@@ -295,16 +295,14 @@ function dayMeter(date, t, tot) {
   const ai = S.aiDay?.[date];
   const useAi = ai && ai.hash === dayHash(date);
   const score = useAi ? ai.score : calc?.score;
-  return `<div class="card dark meter-card">
-    <div class="meter-head"><h3>Ako dnes ješ</h3>${score != null ? `<span class="meter-score">${score}<small>/100</small></span>` : ''}</div>
-    <div class="meter" role="img" aria-label="${score != null ? `Hodnotenie dňa ${score} zo 100: ${verdict(score)}` : 'Zatiaľ bez hodnotenia'}">
-      ${score != null ? `<i style="left:${Math.min(98, Math.max(2, score))}%"></i>` : ''}
-    </div>
-    <div class="meter-ends"><span>Nezdravo</span><span>Zdravo</span></div>
-    <p class="meter-text">${score == null ? 'Zapíš jedlo a ukážem, ako ti ide deň.'
-      : `<b>${verdict(score)}</b> · ${esc(useAi ? ai.text : calc.tip)}${useAi ? ' <span class="chip ai">AI</span>' : ''}`}</p>
-    ${score != null ? `<button class="btn sm ghost-dark" data-act="ai-day">${useAi ? 'Zhodnotiť znova s AI' : 'Zhodnotiť deň s AI'}</button>` : ''}
-  </div>`;
+  const pos = score == null ? null : Math.min(97, Math.max(3, score));
+  // Ťuknutie na pás = zhodnotenie dňa s AI (ak je čo hodnotiť).
+  return `<button class="card meter-card" ${score != null ? 'data-act="ai-day"' : 'disabled'}
+      aria-label="${score != null ? `Hodnotenie dňa ${score} zo 100: ${verdict(score)}. Ťukni pre zhodnotenie s AI.` : 'Zatiaľ bez hodnotenia'}">
+    <span class="meter">${pos != null ? `<i style="left:${pos}%"><b>${score}</b></i>` : ''}</span>
+    <span class="meter-ends"><span>Nezdravo</span><span>Zdravo</span></span>
+    ${useAi ? `<span class="meter-text">${esc(ai.text)}</span>` : ''}
+  </button>`;
 }
 
 const DAY_SCHEMA = {
@@ -337,8 +335,9 @@ Jedlá:\n${list}` }],
 }
 
 async function runDayAI(btn) {
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Hodnotím…';
+  if (btn.classList.contains('busy')) return;
+  btn.classList.add('busy');
+  toast('AI hodnotí tvoj deň…');
   try {
     const res = await analyzeDay(curDate);
     S.aiDay = S.aiDay || {};
@@ -366,9 +365,9 @@ function weekStats() {
     const h = (x.kcal / maxV) * (H - 18);
     const ok = x.t && x.kcal >= x.t.kcal * 0.9;
     const th = x.t ? H - 16 - (x.t.kcal / maxV) * (H - 18) : null;
-    return `<rect x="${i * bw + bw * 0.2}" y="${H - 16 - h}" width="${bw * 0.6}" height="${Math.max(h, 0)}" rx="5" fill="${ok ? '#1fd67a' : 'var(--orange)'}" opacity="${x.n ? 1 : 0.2}"/>` +
+    return `<rect x="${i * bw + bw * 0.2}" y="${H - 16 - h}" width="${bw * 0.6}" height="${Math.max(h, 0)}" rx="5" fill="${ok ? 'var(--green)' : 'var(--orange)'}" opacity="${x.n ? 1 : 0.2}"/>` +
       (th !== null ? `<line x1="${i * bw + bw * 0.1}" x2="${i * bw + bw * 0.9}" y1="${th}" y2="${th}" stroke="#fff" stroke-opacity=".45" stroke-width="2" stroke-dasharray="3 3"/>` : '') +
-      `<text x="${i * bw + bw / 2}" y="${H - 2}" font-size="11" font-weight="${x.d === curDate ? 800 : 600}" text-anchor="middle" fill="${x.d === curDate ? '#fff' : 'rgba(255,255,255,.55)'}">${parseDay(x.d).toLocaleDateString('sk-SK', { weekday: 'short' }).slice(0, 2)}</text>`;
+      `<text x="${i * bw + bw / 2}" y="${H - 2}" font-size="11" font-weight="${x.d === curDate ? 600 : 400}" text-anchor="middle" fill="${x.d === curDate ? '#fff' : 'rgba(255,255,255,.55)'}">${parseDay(x.d).toLocaleDateString('sk-SK', { weekday: 'short' }).slice(0, 2)}</text>`;
   }).join('');
 
   const avg = k => logged.reduce((s, x) => s + x[k], 0) / logged.length;
