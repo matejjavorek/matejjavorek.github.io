@@ -5,8 +5,8 @@ const STORE_KEY = 'jedlo.v1';
 const KEY_KEY = 'jedlo.apikey';
 const BOOK_KEY = 'jedlo.kucharka';
 const MODELS = [
-  ['claude-opus-5-5', 'Claude Opus 5.5 – presnejší (~1–2 centy / fotka)'],
-  ['claude-haiku-5-5', 'Claude Haiku 5.5 – lacnejší, rýchlejší'],
+  ['claude-opus-5-5', 'Claude Opus 5.5, presnejší (~1-2 centy / fotka)'],
+  ['claude-haiku-5-5', 'Claude Haiku 5.5, lacnejší, rýchlejší'],
 ];
 const DRINKS = [
   ['glass', 'Pohár', 250],
@@ -66,7 +66,7 @@ function setKey(v) {
 const $ = sel => document.querySelector(sel);
 const r0 = n => Math.round(n || 0);
 const r1 = n => Math.round((n || 0) * 10) / 10;
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = s => String(s ?? '').replace(/\s+[\u2013\u2014]\s+/g, ', ').replace(/[\u2013\u2014]/g, '-').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const liters = ml => (ml / 1000).toLocaleString('sk-SK', { maximumFractionDigits: 2 });
@@ -171,7 +171,7 @@ function ring(value, target, c1, c2, id) {
 
 function bar(label, value, target, color, unit = 'g') {
   const pct = target ? Math.min((value / target) * 100, 100) : 0;
-  return `<div><div class="bar-label"><span>${label}</span><span class="muted">${r0(value)} / ${target ? r0(target) : '–'} ${unit}</span></div>
+  return `<div><div class="bar-label"><span>${label}</span><span class="muted">${r0(value)} / ${target ? r0(target) : '-'} ${unit}</span></div>
     <div class="bar"><i style="width:${pct}%;background:${color}"></i></div></div>`;
 }
 
@@ -188,7 +188,7 @@ function render() {
   let html = '';
 
   if (!t) {
-    html += `<div class="warn">Najprv vyplň profil (vek, výška, váha) – vypočítam ti denný cieľ na priberanie.
+    html += `<div class="warn">Najprv vyplň profil (vek, výška, váha), vypočítam ti denný cieľ na priberanie.
       <div style="margin-top:10px"><button class="btn sm primary" data-act="profile">Vyplniť profil</button></div></div>`;
   }
 
@@ -227,13 +227,13 @@ function render() {
   html += `<div class="card"><div class="tile">
     <span class="ico weight">${icon('scale')}</span>
     <div class="tile-main"><div class="tile-label">Váha</div>
-      <div class="tile-val">${ws.length ? ws.at(-1).kg.toLocaleString('sk-SK') + ' kg' : '–'}
+      <div class="tile-val">${ws.length ? ws.at(-1).kg.toLocaleString('sk-SK') + ' kg' : '-'}
         ${tr ? `<small>${tr.perWeek >= 0 ? '+' : ''}${tr.perWeek.toFixed(2).replace('.', ',')} kg/týždeň</small>` : ''}</div>
-      ${tr ? `<div class="small muted">${trendAdvice(tr).text}</div>` : `<div class="small muted">${ws.length ? 'Tempo uvidíš po 7 dňoch vážení.' : 'Zapíš ráno nalačno, 2–3× týždenne.'}</div>`}</div>
+      ${tr ? `<div class="small muted">${trendAdvice(tr).text}</div>` : `<div class="small muted">${ws.length ? 'Tempo uvidíš po 7 dňoch vážení.' : 'Zapíš ráno nalačno, 2-3× týždenne.'}</div>`}</div>
     <button class="round" data-act="weight" aria-label="Zapísať váhu">${icon('plus', 20, 2.4)}</button>
   </div></div>`;
 
-  // Záznamy a štatistiky – len keď je čo ukázať
+  // Záznamy a štatistiky, len keď je čo ukázať
   const items = S.entries.filter(e => e.date === curDate).sort((a, b) => a.ts - b.ts);
   if (items.length) {
     html += `<div class="card"><h3>Záznamy <span class="muted small">${items.length}× · ${tot.score ? `zdravosť <span class="score ${scoreClass(tot.score)}">${r1(tot.score)}</span>` : ''}</span></h3>
@@ -241,7 +241,7 @@ function render() {
         ${e.thumb ? `<img src="${e.thumb}" alt="">` : ''}
         <div class="info"><div class="name">${esc(e.name)}</div>
           <div class="small muted">${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} · ${e.g ? r0(e.g) + ' g' : '1 porcia'} · B ${r0(e.p)} g</div></div>
-        <span class="score ${scoreClass(e.score)}">${e.score ?? '–'}</span>
+        <span class="score ${scoreClass(e.score)}">${e.score ?? '-'}</span>
         <span class="kc">${r0(e.kcal)}</span></button>`).join('')}</div></div>`;
   }
   html += weekStats();
@@ -252,7 +252,7 @@ function render() {
 }
 
 // ---------- Ako jem: ukazovateľ od červenej (nezdravo) po zelenú (zdravo) ----------
-// Skóre 0–100: kvalita jedál 40 %, kalórie 25 %, bielkoviny 25 %, vláknina 10 %.
+// Skóre 0-100: kvalita jedál 40 %, kalórie 25 %, bielkoviny 25 %, vláknina 10 %.
 // Pri dnešku sa kalórie a bielkoviny porovnávajú s tým, koľko by malo byť zjedené do tejto hodiny.
 function dayScore(date, t, tot) {
   if (!tot.n) return null;
@@ -274,7 +274,7 @@ function dayScore(date, t, tot) {
     quality: 'veľa spracovaného jedla',
     kcal: tot.kcal < (t?.kcal || 0) * expected ? 'málo kalórií na priberanie' : 'veľa kalórií naraz',
     protein: 'málo bielkovín',
-    fiber: 'málo vlákniny – pridaj zeleninu',
+    fiber: 'málo vlákniny, pridaj zeleninu',
   };
   const weakest = Object.entries(parts).sort((a, b) => a[1] - b[1])[0];
   return { score, tip: weakest[1] < 0.8 ? tips[weakest[0]] : 'drž to tak' };
@@ -287,7 +287,7 @@ function verdict(score) {
   return 'Výborne';
 }
 
-// Odtlačok jedál dňa – AI hodnotenie platí, len kým sa jedlá nezmenia.
+// Odtlačok jedál dňa, AI hodnotenie platí, len kým sa jedlá nezmenia.
 function dayHash(date) {
   return S.entries.filter(e => e.date === date).map(e => e.id + ':' + e.g).join('|');
 }
@@ -325,8 +325,8 @@ async function analyzeDay(date) {
   const isToday = date === todayKey();
   return callClaude({
     system: `Si výživový tréner športovca, ktorý chce nabrať svaly. Zhodnoť, ako zdravo a vhodne sa v daný deň stravoval.
-score: celé číslo 0–100 (0 = veľmi nezdravo, 50 = priemer, 100 = výborne). Zohľadni kvalitu potravín, bielkoviny, kalórie vzhľadom na cieľ, vlákninu, zeleninu a rozloženie jedál.${isToday ? ' Deň ešte neskončil – nehodnoť prísne to, čo ešte stihne zjesť.' : ''}
-text: jedna krátka veta po slovensky (max. 12 slov) – čo je najlepšie alebo čo zlepšiť.`,
+score: celé číslo 0-100 (0 = veľmi nezdravo, 50 = priemer, 100 = výborne). Zohľadni kvalitu potravín, bielkoviny, kalórie vzhľadom na cieľ, vlákninu, zeleninu a rozloženie jedál.${isToday ? ' Deň ešte neskončil, nehodnoť prísne to, čo ešte stihne zjesť.' : ''}
+text: jedna krátka veta po slovensky (max. 12 slov), čo je najlepšie alebo čo zlepšiť. Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`,
     content: [{ type: 'text', text: `${isToday ? `Je ${new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })}, deň ešte prebieha.` : 'Deň už skončil.'}
 Cieľ: ${t ? `${t.kcal} kcal, ${t.p} g bielkovín, ${t.fib} g vlákniny` : 'neznámy'}.
 Spolu: ${r0(tot.kcal)} kcal, B ${r0(tot.p)} g, S ${r0(tot.c)} g, T ${r0(tot.f)} g, vláknina ${r0(tot.fib)} g.
@@ -507,13 +507,13 @@ function matchRecipe(r, have) {
 function recipesCard() {
   if (!BOOK) {
     return `<div class="card"><h3>Čo si uvarím?</h3>
-      <p class="small muted" style="margin-bottom:12px">Recepty zo Športovej kuchárky. Odomkneš ich raz – ťukni na svoj súkromný odkaz, alebo ho skopíruj a ťukni sem.</p>
+      <p class="small muted" style="margin-bottom:12px">Recepty zo Športovej kuchárky. Odomkneš ich raz, ťukni na svoj súkromný odkaz, alebo ho skopíruj a ťukni sem.</p>
       <button class="btn primary" data-act="unlock-paste">Vložiť odkaz a odomknúť</button></div>`;
   }
   return `<button class="cook-hero" data-act="cook">
-      <span><b>Čo si uvarím?</b><span>Raňajky, obed, večera alebo snack – z toho, čo máš doma.</span></span>
+      <span><b>Čo si uvarím?</b><span>Raňajky, obed, večera alebo snack, z toho, čo máš doma.</span></span>
       ${icon('right', 22, 2.4)}</button>
-    <button class="link-btn" data-act="all-recipes">Všetky recepty (${BOOK.recipes.length}) – hľadať podľa názvu</button>`;
+    <button class="link-btn" data-act="all-recipes">Všetky recepty (${BOOK.recipes.length}), hľadať podľa názvu</button>`;
 }
 
 // ---------- Sprievodca: jedlo -> suroviny -> recepty -> recept ----------
@@ -561,7 +561,7 @@ function updateCookCount() {
   const btn = $('#cook-go');
   if (!btn) return;
   const n = cookList().length;
-  btn.textContent = S.fridge.length ? (n ? `Ukáž recepty (${n})` : 'Nič nevychádza – pridaj surovinu') : `Ukáž všetky (${n})`;
+  btn.textContent = S.fridge.length ? (n ? `Ukáž recepty (${n})` : 'Nič nevychádza, pridaj surovinu') : `Ukáž všetky (${n})`;
   btn.disabled = S.fridge.length > 0 && !n;
 }
 
@@ -638,7 +638,7 @@ function planCard() {
   const p = S.mealPlan;
   const sub = p
     ? `${p.form.days} ${p.form.days < 5 ? 'dni' : 'dní'} · ${p.form.people} ${p.form.people === 1 ? 'osoba' : p.form.people < 5 ? 'osoby' : 'osôb'} · odhad ${eur(p.result.total_best)} z ${eur(p.form.budget)}`
-    : 'Zadaj rozpočet a počet dní – poskladám jedlá aj nákup.';
+    : 'Zadaj rozpočet a počet dní, poskladám jedlá aj nákup.';
   return `<button class="cook-hero" data-act="plan"><span><b>Plán a nákup</b><span>${sub}</span></span>${icon('right', 22, 2.4)}</button>`;
 }
 
@@ -650,7 +650,7 @@ function openPlan() {
   planStep1();
 }
 
-// Krok 1: dni, jedlá, ľudia, rozpočet, chute – všetko ťukaním.
+// Krok 1: dni, jedlá, ľudia, rozpočet, chute, všetko ťukaním.
 function planStep1() {
   openSheet('', '');
   wizHead('Nový plán', S.mealPlan ? showPlan : null);
@@ -726,13 +726,13 @@ Pravidlá plánu:
 - To isté jedlo smie byť najviac 2 dni po sebe (uvarí sa raz, zje sa 2×), nikdy 3×. Obed a večera v ten istý deň nech sú rôzne.
 - Strieda chute a suroviny, rešpektuj preferencie. Zdravé, ale chutné; ak chce sladké, zaraď sladké raňajky alebo snack.
 - Šetri peniaze: opakuj suroviny naprieč receptami (jedno balenie na viac jedál), sezónne a lacné potraviny. Drž sa rozpočtu.
-- note: krátko, napr. "uvar 4 porcie – aj na zajtra" alebo "zvyšok zo včera". Inak prázdny reťazec.
+- note: krátko, napr. "uvar 4 porcie, aj na zajtra" alebo "zvyšok zo včera". Inak prázdny reťazec.
 Nákupný zoznam:
 - Spoj suroviny zo všetkých jedál pre zadaný počet ľudí, zaokrúhli na bežné balenia v slovenských obchodoch (napr. "1 kg", "500 g", "10 ks", "1 l").
 - Názvy po slovensky. Soľ, korenie, olej, ocot a koreniny daj do pantry (veci, ktoré asi má doma), nie do shopping.
 - Ak niečo už má doma (zoznam nižšie), nekupuj to.
 - kaufland a jednota: odhad ceny celého balenia v eurách podľa bežných cien v Kauflande a COOP Jednote na Slovensku v roku 2026. Jednota býva o niečo drahšia.
-summary: 1–2 vety po slovensky – či sa plán zmestí do rozpočtu a kde sa oplatí nakúpiť.`,
+summary: 1-2 vety po slovensky, či sa plán zmestí do rozpočtu a kde sa oplatí nakúpiť. Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`,
     content: [{ type: 'text', text: `Počet dní: ${f.days}. Jedlá: ${mealNames}. Počet ľudí: ${f.people}. Rozpočet na celý nákup: ${f.budget} €.
 ${t ? `Denný cieľ používateľa: ${t.kcal} kcal, ${t.p} g bielkovín.` : ''}
 Preferencie: ${prefs || 'žiadne'}${f.wish ? `. Navyše: ${f.wish}` : ''}.
@@ -852,7 +852,7 @@ function mainTip(logged) {
   if (pMiss > done.length / 2) return `Bielkoviny pod cieľom ${pMiss}× z ${done.length}. Daj do každého jedla mäso, vajcia, tvaroh, skyr alebo proteín.`;
   const sc = done.reduce((s, x) => s + x.scoreW, 0) / (done.reduce((s, x) => s + x.kcal, 0) || 1);
   if (sc < 5) return 'Veľa spracovaného jedla. Rovnaké kalórie dáš aj z ryže, mäsa, vajec, orechov a ovocia.';
-  return 'Ideš dobre – drž to. 💪';
+  return 'Ideš dobre, drž to. 💪';
 }
 
 // ---------- Váha ----------
@@ -960,9 +960,10 @@ const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu ide
 - Nutričné hodnoty uveď pre CELÚ odhadnutú porciu danej zložky, nie na 100 g.
 - Ak používateľ uvedie čo to je, gramáž, značku alebo spôsob prípravy, má to prednosť pred odhadom. Počítaj aj s olejom/maslom pri príprave.
 - Názvy píš po slovensky, krátko (napr. "Ryža biela varená").
-- health_score 1–10: 10 = nespracované, výživné potraviny; 5 = bežné; 1 = ultraspracované, veľa cukru, vyprážané.
-- note: 1 krátka veta po slovensky – zhodnoť jedlo vzhľadom na cieľ používateľa.
-- Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.`;
+- health_score 1-10: 10 = nespracované, výživné potraviny; 5 = bežné; 1 = ultraspracované, veľa cukru, vyprážané.
+- note: 1 krátka veta po slovensky, zhodnoť jedlo vzhľadom na cieľ používateľa.
+- Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.
+- Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`;
 
 async function callClaude({ system, content, schema, effort = 'medium', maxTokens = 8000 }) {
   const key = getKey();
@@ -1148,7 +1149,7 @@ function showAIResult(res) {
           <div class="small muted" style="margin-top:6px">${r0(it.kcal * k)} kcal · B ${r0(it.p * k)} · S ${r0(it.c * k)} · T ${r0(it.f * k)}
           · <span class="score ${scoreClass(it.score)}">${it.score}</span></div></div>`;
       }).join('')}
-      <p class="small muted" style="margin:4px 0 12px">Ak gramy nesedia, prepíš ich – hodnoty sa prepočítajú.</p>
+      <p class="small muted" style="margin:4px 0 12px">Ak gramy nesedia, prepíš ich, hodnoty sa prepočítajú.</p>
       ${items.length ? '<button class="btn primary" id="ai-save">Uložiť</button>' : '<div class="empty">AI nenašla žiadne jedlo.</div>'}
     `);
     document.querySelectorAll('[data-ai-g]').forEach(inp => inp.addEventListener('change', () => {
@@ -1256,8 +1257,8 @@ function openProfile() {
         <label class="field">Váha (kg)<input name="weight" type="number" step="0.1" inputmode="decimal" value="${currentWeight() ?? ''}"></label>
       </div>
       <label class="field">Pohyb počas týždňa<select name="activity">${opt(p.activity, [
-        [1.55, 'Sedavá práca + tréning 3–5×'],
-        [1.725, 'Fyzická práca 3–4 dni + tréning/futbal 7×'],
+        [1.55, 'Sedavá práca + tréning 3-5×'],
+        [1.725, 'Fyzická práca 3-4 dni + tréning/futbal 7×'],
         [1.9, 'Fyzická práca 5 dní + tréning denne'],
       ])}</select></label>
       <label class="field">Cieľ<select name="goal">${opt([0, 250, 350, 500].includes(Number(p.surplus)) ? p.surplus : 'x', [
@@ -1278,7 +1279,7 @@ function openProfile() {
     <p class="small muted" style="margin-top:6px">Kľúč ostáva len v tomto zariadení a posiela sa iba do Anthropic API.</p>
 
     <h3 class="sub-h">Športová kuchárka</h3>
-    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá – odomkneš ju svojím súkromným odkazom.'}</p>
+    <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá, odomkneš ju svojím súkromným odkazom.'}</p>
     ${BOOK ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
 
     <h3 class="sub-h">Záloha</h3>
