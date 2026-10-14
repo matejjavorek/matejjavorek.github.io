@@ -74,7 +74,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Hlavička */
 .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 8px 0 18px; }
-.day-row { display: flex; align-items: center; gap: 8px; }
+.day-row { display: flex; align-items: center; gap: 12px; }
 .top h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; margin-right: 4px; }
 .date { font-size: 15px; color: var(--muted); margin-top: 2px; }
 .nd { font-size: 13px; color: var(--muted); margin-top: 2px; }
@@ -90,7 +90,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 }
 .round.sm { width: 30px; height: 30px; position: relative; }
 /* Väčšia plocha na ťuknutie (44 px), vzhľad ostáva. */
-.round.sm::after { content: ""; position: absolute; inset: -7px; }
+.round.sm::after { content: ""; position: absolute; inset: -7px -5px; }
 .round[disabled] { opacity: .3; }
 .round.orange { background: var(--orange); color: var(--on-accent); }
 
@@ -123,6 +123,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Pás Nezdravo – Zdravo */
 .meter-card { display: block; width: 100%; border: 0; text-align: left; color: var(--text); padding: 30px 16px 16px; }
+.meter-card.empty .meter { opacity: .35; }
 .meter-card.busy .meter i { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .4; } }
 .meter {
