@@ -411,28 +411,21 @@ async function backupNow() {
 }
 
 // ---------- Ako jem: ukazovateľ od červenej (nezdravo) po zelenú (zdravo) ----------
-// Skóre 0-100: kvalita jedál 40 %, kalórie 25 %, bielkoviny 25 %, vláknina 10 %.
-// Pri dnešku sa kalórie a bielkoviny porovnávajú s tým, koľko by malo byť zjedené do tejto hodiny.
+// Skóre 0-100 hodnotí len zdravosť jedál, nie to, koľko si už zjedol (to ukazuje kruh kalórií):
+// kvalita jedál 60 %, podiel bielkovín 25 %, vláknina na 1000 kcal 15 %.
 function dayScore(date, t, tot) {
-  if (!tot.n) return null;
-  const now = new Date();
-  const expected = date < todayKey() ? 1 : Math.min(1, Math.max(0.25, (now.getHours() + now.getMinutes() / 60 - 7) / 14));
-  const fit = (val, target) => {
-    if (!target) return 0.5;
-    const ratio = val / (target * expected);
-    return ratio >= 0.9 && ratio <= 1.15 ? 1 : ratio < 0.9 ? Math.max(0, ratio / 0.9) : Math.max(0, 1 - (ratio - 1.15) * 1.5);
-  };
+  if (!tot.n || !tot.kcal) return null;
+  const pShare = (tot.p * 4) / tot.kcal;
+  const pTarget = t ? (t.p * 4) / t.kcal : 0.18;
   const parts = {
     quality: ((tot.score ?? 5) - 1) / 9,
-    kcal: fit(tot.kcal, t?.kcal),
-    protein: fit(tot.p, t?.p),
-    fiber: t ? Math.min(1, tot.fib / (t.fib * expected)) : 0.5,
+    protein: Math.min(1, pShare / pTarget),
+    fiber: Math.min(1, (tot.fib / tot.kcal) * 1000 / 14),
   };
-  const score = Math.round(100 * (0.4 * parts.quality + 0.25 * parts.kcal + 0.25 * parts.protein + 0.1 * parts.fiber));
+  const score = Math.round(100 * (0.6 * parts.quality + 0.25 * parts.protein + 0.15 * parts.fiber));
   const tips = {
     quality: 'veľa spracovaného jedla',
-    kcal: tot.kcal < (t?.kcal || 0) * expected ? 'málo kalórií na priberanie' : 'veľa kalórií naraz',
-    protein: 'málo bielkovín',
+    protein: 'málo bielkovín v jedle',
     fiber: 'málo vlákniny, pridaj zeleninu',
   };
   const weakest = Object.entries(parts).sort((a, b) => a[1] - b[1])[0];
@@ -484,7 +477,7 @@ async function analyzeDay(date) {
   const isToday = date === todayKey();
   return callClaude({
     system: `Si výživový tréner športovca, ktorý chce nabrať svaly. Zhodnoť, ako zdravo a vhodne sa v daný deň stravoval.
-score: celé číslo 0-100 (0 = veľmi nezdravo, 50 = priemer, 100 = výborne). Zohľadni kvalitu potravín, bielkoviny, kalórie vzhľadom na cieľ, vlákninu, zeleninu a rozloženie jedál.${isToday ? ' Deň ešte neskončil, nehodnoť prísne to, čo ešte stihne zjesť.' : ''}
+score: celé číslo 0-100, ako ZDRAVO jedol (0 = veľmi nezdravo, 50 = priemer, 100 = výborne). Hodnoť kvalitu a spracovanie potravín, bielkoviny, vlákninu, zeleninu a ovocie. Množstvo kalórií do skóre nerátaj, to sleduje inde.${isToday ? ' Deň ešte neskončil, nehodnoť prísne to, čo ešte stihne zjesť.' : ''}
 text: jedna krátka veta po slovensky (max. 12 slov), čo je najlepšie alebo čo zlepšiť. Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`,
     content: [{ type: 'text', text: `${isToday ? `Je ${new Date().toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })}, deň ešte prebieha.` : 'Deň už skončil.'}
 Cieľ: ${t ? `${t.kcal} kcal, ${t.p} g bielkovín, ${t.fib} g vlákniny` : 'neznámy'}.
@@ -809,9 +802,10 @@ function scaleLine(line, factor) {
     return `${pre}${fmtQ(x * factor, unit)}${y != null ? '-' + fmtQ(y * factor, unit) : ''}${sp}${unit}`;
   });
 }
+// Recepty z kuchárky majú suroviny na 1 porciu pripravené aj so správnou gramatikou (r.ing1).
 function recipeIng(r) {
   const f = r.portions > 1 ? 1 / r.portions : 1;
-  return r.ing.map(l => scaleLine(l, f)).filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
+  return (r.ing1 || r.ing.map(l => scaleLine(l, f))).filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
 }
 
 function starsHtml(id, rating) {
@@ -1011,7 +1005,9 @@ function openRecipe(id, back = null) {
     ${recipeDietBox(r, back === showPlan && S.mealPlan ? dietOf(S.mealPlan.form) : profileDiet())}
     <h3 class="sub-h">Postup</h3>
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
-    ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}`;
+    ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}
+    ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
+      <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}`;
   $('#sheet-body').scrollTop = 0;
   $('.sheet').scrollTop = 0;
   $('#r-note').addEventListener('change', e => { S.recipeMeta[r.id] = { ...rmeta(r.id), note: e.target.value.trim() }; save(); });
@@ -1028,7 +1024,7 @@ const PLAN_MEALS = [
   ['snack', 'Snack / sladké', ['svaciny', 'dezerty']],
 ];
 const PLAN_PREFS = [
-  ['sladke', 'Sladké', r => /čokol|banán|lívan|palačin|kaše|brownie|koláč|muffin|smoothie|overnight|dezert|tiramisu|perník|buchta|bábovk|vafle|mugcake/i.test(r.title)],
+  ['sladke', 'Sladké', r => /čokol|banán|lievan|lívan|palacin|palačin|kaš|brownie|koláč|muffin|smoothie|overnight|dezert|tiramisu|perník|buchta|bábovk|vafl|mugcake|puding|cheesecake|tvarohov|jogurtov/i.test(r.title)],
   ['kuracie', 'Kuracie', r => r.req.some(a => a.includes('kuracie'))],
   ['hovadzie', 'Hovädzie', r => r.req.some(a => a.includes('hovadzie'))],
   ['ryby', 'Ryby', r => r.req.some(a => a.some(x => ['losos', 'tuniak', 'ryba', 'krevety'].includes(x)))],
@@ -2210,6 +2206,11 @@ document.addEventListener('click', ev => {
   else if (d.act === 'cook-next') { if (cookState.i >= cookState.r.steps.length - 1) stopCooking(); else { cookState.i++; drawCooking(); } }
   else if (d.act === 'cook-prev') { cookState.i = Math.max(-1, cookState.i - 1); drawCooking(); }
   else if (d.act === 'add-recipe') openAddRecipe();
+  else if (d.act === 'recipe-del') {
+    if (!confirm('Zmazať tento recept?')) return;
+    S.myRecipes = (S.myRecipes || []).filter(r => r.id !== Number(d.id));
+    save(); render(); openAllRecipes(); toast('Recept zmazaný');
+  }
   else if (d.act === 'only-fav') { onlyFav = !onlyFav; openAllRecipes(); }
   else if (d.act === 'scan') openScan();
   else if (d.act === 'receipt') pickPhoto('receipt');
