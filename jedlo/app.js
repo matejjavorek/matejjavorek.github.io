@@ -241,6 +241,7 @@ function render() {
         ${e.thumb ? `<img src="${e.thumb}" alt="">` : ''}
         <div class="info"><div class="name">${esc(e.name)}</div>
           <div class="small muted">${new Date(e.ts).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })} · ${e.g ? r0(e.g) + ' g' : '1 porcia'} · B ${r0(e.p)} g</div></div>
+        ${S.profile.glutenFree && e.gluten && e.gluten !== 'nie' ? glutenTag(e.gluten) : ''}
         <span class="score ${scoreClass(e.score)}">${e.score ?? '-'}</span>
         <span class="kc">${r0(e.kcal)}</span></button>`).join('')}</div></div>`;
   }
@@ -516,6 +517,73 @@ function recipesCard() {
     <button class="link-btn" data-act="all-recipes">Všetky recepty (${BOOK.recipes.length}), hľadať podľa názvu</button>`;
 }
 
+// ---------- Strava: bezlepková a alergie ----------
+// Lepok: čo v recepte obsahuje lepok a čím to nahradiť. Riadok s „bezlepk…“ sa ignoruje.
+const GLUTEN_RULES = [
+  [/kypřic|prášk[a-zů]* do pečiva/i, 'bezlepkový prášok do pečiva'],
+  [/(?<!rýžov[éáýou]+ |kukuřičn[éáýou]+ |pohankov[éáýou]+ |mandlov[éáýou]+ |kokosov[éáýou]+ |cizrnov[éáýou]+ |bramborov[éáýou]+ |tapiokov[éáýou]+ )mouk/i, 'bezlepková múka (napr. ryžová alebo mix)'],
+  [/(?<!rýžov[éáýou]+ |jáhlov[éáýou]+ |pohankov[éáýou]+ |kukuřičn[éáýou]+ )vloč/i, 'certifikované bezlepkové ovsené vločky'],
+  [/(?<!kukuřičn[éáýou]+ )tortil|wrap|lavash|\bpit[ay]\b/i, 'kukuričné alebo bezlepkové tortilly'],
+  [/piškot|sušenk/i, 'bezlepkové piškoty / sušienky'],
+  [/strouhank|krutón/i, 'bezlepková strúhanka'],
+  [/chléb|chleb|(?<!do )pečiv|toast|bagel|rohlík|bulk|housk|baget|žeml/i, 'bezlepkový chlieb alebo pečivo'],
+  [/těstovin|špaget|penne|(?<!rýžov[éáýou]+ )nudl|lasagn|gnocchi|noky|fleky/i, 'bezlepkové cestoviny / noky'],
+  [/bulgur|kuskus|krupic|ječm|kroupy|seitan|špald|pšenič|žitn/i, 'quinoa, pohánka alebo ryža'],
+  [/sójov[áé] omáčk|teriyaki|worcester/i, 'tamari (bezlepková sójová omáčka)'],
+  [/granol|müsli|cereál/i, 'bezlepková granola'],
+  [/\bpiv[oa]\b/i, 'bezlepkové pivo'],
+];
+const ALLERGENS = [
+  ['mlieko', 'Mlieko / laktóza', /mlék|mléč|jogurt|skyr|tvaroh|sýr|cottage|smetan|(?<!arašídov[éého]+ |kešu |mandlov[éého]+ |ořechov[éého]+ )másl|ricott|mozzarel|parmaz|parmez|feta|halloumi|kefír|lučin|mascarpon|bryndz|burrat|ghí|čedar|eidam/i],
+  ['vajcia', 'Vajcia', /vejc|vajíč|vajec|vaječ|žloutk|bílk/i],
+  ['orechy', 'Orechy', /ořech|ořeš|mandl|kešu|lískov|pistáci|pekan|makadam/i],
+  ['arasidy', 'Arašidy', /arašíd/i],
+  ['ryby', 'Ryby', /losos|tuňák|tresk|ryb[íay]|sardin|makrel|ančov/i],
+  ['korysy', 'Kôrovce (krevety)', /krevet/i],
+  ['soja', 'Sója', /sój|tofu|tempeh|edamame/i],
+  ['sezam', 'Sezam', /sezam|tahini/i],
+  ['zeler', 'Zeler', /celer/i],
+  ['horcica', 'Horčica', /hořčic/i],
+];
+
+function dietOf(form) {
+  return { gf: !!form?.gf, allergens: form?.allergens || [] };
+}
+function profileDiet() { return dietOf({ gf: S.profile.glutenFree, allergens: S.profile.allergens }); }
+function dietActive(d) { return d.gf || d.allergens.length > 0; }
+
+// Analýza receptu pre danú stravu: zámeny pri lepku, nájdené alergény.
+const dietCache = new Map();
+function recipeDiet(r) {
+  if (dietCache.has(r.id)) return dietCache.get(r.id);
+  const lines = r.ing.filter(l => !/:$/.test(l));
+  const swaps = new Map();
+  for (const l of lines) {
+    if (/bezlepk/i.test(l)) continue;
+    for (const [rx, sw] of GLUTEN_RULES) if (rx.test(l)) { swaps.set(sw, l); break; }
+  }
+  const text = lines.join(' \n ');
+  const allergens = ALLERGENS.filter(([, , rx]) => rx.test(text)).map(([k]) => k);
+  const out = { swaps: [...swaps.entries()].map(([sw, l]) => ({ from: l, to: sw })), allergens };
+  dietCache.set(r.id, out);
+  return out;
+}
+
+// Vyhovuje recept strave? Alergény vylučujú, lepok sa dá nahradiť.
+function fitsDiet(r, d) {
+  return !d.allergens.some(a => recipeDiet(r).allergens.includes(a));
+}
+
+function dietBadge(r, d) {
+  if (!d.gf) return '';
+  const n = recipeDiet(r).swaps.length;
+  return n ? `<span class="tag warn-tag">Bezlepková úprava (${n})</span>` : '<span class="tag ok-tag">Bez lepku</span>';
+}
+
+function dietSummary(d) {
+  return [d.gf && 'bez lepku', ...d.allergens.map(a => 'bez: ' + ALLERGENS.find(x => x[0] === a)?.[1].toLowerCase())].filter(Boolean).join(', ');
+}
+
 // ---------- Sprievodca: jedlo -> suroviny -> recepty -> recept ----------
 const wiz = { meal: null, back: null };
 
@@ -551,10 +619,12 @@ function cookFridge() {
 
 function cookList() {
   const have = new Set(S.fridge);
-  const list = mealRecipes().map(r => matchRecipe(r, have));
-  if (!have.size) return list.sort((a, b) => a.r.title.localeCompare(b.r.title, 'cs'));
+  const d = profileDiet();
+  const gfPenalty = m => d.gf ? recipeDiet(m.r).swaps.length : 0;
+  const list = mealRecipes().filter(r => fitsDiet(r, d)).map(r => matchRecipe(r, have));
+  if (!have.size) return list.sort((a, b) => gfPenalty(a) - gfPenalty(b) || a.r.title.localeCompare(b.r.title, 'cs'));
   return list.filter(m => m.missing.length <= 2 && m.have >= Math.min(2, m.r.req.length))
-    .sort((a, b) => a.missing.length - b.missing.length || b.have - a.have);
+    .sort((a, b) => a.missing.length - b.missing.length || gfPenalty(a) - gfPenalty(b) || b.have - a.have);
 }
 
 function updateCookCount() {
@@ -571,7 +641,8 @@ function recipeCard(m, showMiss) {
     <span class="photo"><img data-photo="${r.id}" alt=""></span>
     <span class="rinfo"><b>${esc(r.title)}</b>
       <span class="small muted">${[r.time && r.time + ' min', r.kcal && r0(r.kcal) + ' kcal', r.p && 'B ' + r0(r.p) + ' g'].filter(Boolean).join(' · ')}</span>
-      ${showMiss ? (m.missing.length ? `<span class="miss">Chýba: ${m.missing.map(a => chipLabel(a[0])).join(', ')}</span>` : '<span class="ok">Máš všetko</span>') : ''}</span>
+      ${showMiss ? (m.missing.length ? `<span class="miss">Chýba: ${m.missing.map(a => chipLabel(a[0])).join(', ')}</span>` : '<span class="ok">Máš všetko</span>') : ''}
+      ${dietBadge(r, profileDiet())}</span>
   </button>`;
 }
 
@@ -604,6 +675,7 @@ function openRecipe(id, back = null) {
     <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
     <div class="ing">${r.ing.map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div>
     ${miss.length ? `<p class="miss" style="margin-top:8px">Chýba ti: ${miss.map(a => chipLabel(a[0])).join(', ')}</p>` : ''}
+    ${recipeDietBox(r, back === showPlan && S.mealPlan ? dietOf(S.mealPlan.form) : profileDiet())}
     <h3 class="sub-h">Postup</h3>
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
     ${r.kcal ? `<button class="btn primary" data-eat="${r.id}" style="margin-top:16px">Zjedol som 1 porciu</button>` : ''}`;
@@ -632,7 +704,7 @@ const PLAN_PREFS = [
   ['rychle', 'Rýchle (do 20 min)', r => r.time && r.time <= 20],
   ['mealprep', 'Meal prep', r => r.prep],
 ];
-const planForm = { days: 3, meals: ['ranajky', 'obed', 'vecera'], people: 1, budget: 30, prefs: [], wish: '' };
+const planForm = { days: 3, meals: ['ranajky', 'obed', 'vecera'], people: 1, budget: 30, prefs: [], wish: '', gf: null, allergens: null };
 
 function planCard() {
   const p = S.mealPlan;
@@ -652,6 +724,9 @@ function openPlan() {
 
 // Krok 1: dni, jedlá, ľudia, rozpočet, chute, všetko ťukaním.
 function planStep1() {
+  // Strava plánu: predvolene podľa profilu, dá sa zmeniť (napr. varíš aj pre priateľku).
+  if (planForm.gf === null) planForm.gf = !!S.profile.glutenFree;
+  if (planForm.allergens === null) planForm.allergens = [...(S.profile.allergens || [])];
   openSheet('', '');
   wizHead('Nový plán', S.mealPlan ? showPlan : null);
   const seg = (name, opts, cur) => `<div class="seg">${opts.map(([v, l]) =>
@@ -665,6 +740,9 @@ function planStep1() {
       `<button class="chip-btn ${planForm.meals.includes(k) && !allMeals ? 'on' : ''}" data-pm="${k}">${l}</button>`).join('')}</div>
     <h3 class="sub-h">Pre koľko ľudí</h3>
     ${seg('people', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5+']], planForm.people)}
+    <h3 class="sub-h">Strava (platí pre všetkých)</h3>
+    <div class="chips"><button class="chip-btn ${planForm.gf ? 'on' : ''}" data-pdiet="gf">Bezlepkové</button>${ALLERGENS.map(([k, l]) =>
+      `<button class="chip-btn ${planForm.allergens.includes(k) ? 'on' : ''}" data-pall="${k}">Bez: ${l.toLowerCase()}</button>`).join('')}</div>
     <h3 class="sub-h">Rozpočet na celý nákup</h3>
     <div class="row"><input class="input" id="plan-budget" type="number" inputmode="decimal" min="1" value="${planForm.budget}" style="flex:1"><span class="muted">€</span></div>
     <h3 class="sub-h">Na čo máš chuť</h3>
@@ -680,8 +758,9 @@ function planCandidates() {
   const prefs = PLAN_PREFS.filter(([k]) => planForm.prefs.includes(k));
   for (const [k, , cats] of PLAN_MEALS) {
     if (!planForm.meals.includes(k)) continue;
-    const pool = BOOK.recipes.filter(r => cats.includes(r.cat) && r.kcal)
-      .map(r => ({ r, s: prefs.reduce((s, [, , f]) => s + (f(r) ? 2 : 0), 0) + Math.random() * 1.5 }))
+    const d = dietOf(planForm);
+    const pool = BOOK.recipes.filter(r => cats.includes(r.cat) && r.kcal && fitsDiet(r, d))
+      .map(r => ({ r, s: prefs.reduce((s, [, , f]) => s + (f(r) ? 2 : 0), 0) + Math.random() * 1.5 - (d.gf ? recipeDiet(r).swaps.length * 0.6 : 0) }))
       .sort((a, b) => b.s - a.s).slice(0, k === 'vecera' ? 15 : 22);
     pool.forEach(({ r }) => picked.set(r.id, r));
   }
@@ -713,10 +792,11 @@ const PLAN_SCHEMA = {
 };
 
 async function generatePlan() {
-  const f = { ...planForm, meals: [...planForm.meals], prefs: [...planForm.prefs] };
+  const f = { ...planForm, meals: [...planForm.meals], prefs: [...planForm.prefs], allergens: [...planForm.allergens] };
+  const d = dietOf(f);
   const t = targets(todayKey());
   const cands = planCandidates();
-  const line = r => `#${r.id} | ${r.title} | ${BOOK.cats.find(c => c.id === r.cat)?.label} | recept na ${r.portions} porc. | ${r0(r.kcal)} kcal, B ${r0(r.p)} g / porcia | ${r.time || '?'} min${r.prep ? ' | meal prep' : ''}\n  suroviny: ${r.ing.filter(l => !/:$/.test(l)).map(l => l.slice(0, 70)).slice(0, 16).join('; ')}`;
+  const line = r => `#${r.id}${d.gf && recipeDiet(r).swaps.length ? ` [bezlepkovo nahradiť: ${recipeDiet(r).swaps.map(s => s.to).join('; ')}]` : ''} | ${r.title} | ${BOOK.cats.find(c => c.id === r.cat)?.label} | recept na ${r.portions} porc. | ${r0(r.kcal)} kcal, B ${r0(r.p)} g / porcia | ${r.time || '?'} min${r.prep ? ' | meal prep' : ''}\n  suroviny: ${r.ing.filter(l => !/:$/.test(l)).map(l => l.slice(0, 70)).slice(0, 16).join('; ')}`;
   const mealNames = PLAN_MEALS.filter(([k]) => f.meals.includes(k)).map(([k, l]) => `${k} (${l})`).join(', ');
   const prefs = PLAN_PREFS.filter(([k]) => f.prefs.includes(k)).map(([, l]) => l).join(', ');
   const res = await callClaude({
@@ -731,10 +811,12 @@ Nákupný zoznam:
 - Spoj suroviny zo všetkých jedál pre zadaný počet ľudí, zaokrúhli na bežné balenia v slovenských obchodoch (napr. "1 kg", "500 g", "10 ks", "1 l").
 - Názvy po slovensky. Soľ, korenie, olej, ocot a koreniny daj do pantry (veci, ktoré asi má doma), nie do shopping.
 - Ak niečo už má doma (zoznam nižšie), nekupuj to.
+- Ak je strava bezlepková: všetko musí byť bez lepku. Pri receptoch s poznámkou [bezlepkovo nahradiť] kupuj bezlepkové verzie (napr. bezlepkové cestoviny, chlieb, certifikované bezlepkové vločky) a v názve položky to napíš. Pri alergiách nesmie byť v nákupe žiadny daný alergén.
 - kaufland a jednota: odhad ceny celého balenia v eurách podľa bežných cien v Kauflande a COOP Jednote na Slovensku v roku 2026. Jednota býva o niečo drahšia.
 summary: 1-2 vety po slovensky, či sa plán zmestí do rozpočtu a kde sa oplatí nakúpiť. Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`,
     content: [{ type: 'text', text: `Počet dní: ${f.days}. Jedlá: ${mealNames}. Počet ľudí: ${f.people}. Rozpočet na celý nákup: ${f.budget} €.
 ${t ? `Denný cieľ používateľa: ${t.kcal} kcal, ${t.p} g bielkovín.` : ''}
+Strava: ${dietActive(d) ? dietSummary(d) : 'bez obmedzení'}.
 Preferencie: ${prefs || 'žiadne'}${f.wish ? `. Navyše: ${f.wish}` : ''}.
 Doma už má: ${S.fridge.length ? S.fridge.map(chipLabel).join(', ') : 'nič nezadané'}.
 
@@ -776,6 +858,7 @@ function showPlan() {
   if ($('#sheet-bg').hidden) openSheet('', '');
   wizHead('Plán a nákup', null);
   const over = r.total_best > f.budget;
+  const dsum = dietActive(dietOf(f)) ? `<p class="small muted" style="margin:-4px 0 12px">Strava: ${dietSummary(dietOf(f))}</p>` : '';
   const mealLabel = k => PLAN_MEALS.find(m => m[0] === k)?.[1] || k;
   const title = id => BOOK?.recipes.find(x => x.id === id)?.title || 'Recept';
   const cheaper = it => (Number(it.kaufland) || 0) <= (Number(it.jednota) || 0) ? 'kaufland' : 'jednota';
@@ -802,7 +885,18 @@ function showPlan() {
       + `<p class="small muted" style="margin-top:14px">Všetko v Kauflande: ${eur(r.total_kaufland)} · všetko v Jednote: ${eur(r.total_jednota)}.<br>Ceny sú odhad podľa bežných cien, nie z aktuálneho letáku.</p>`
       + (r.pantry?.length ? `<h3 class="sub-h">Asi máš doma</h3><p class="small muted">${r.pantry.map(esc).join(', ')}</p>` : '');
   }
-  $('#sheet-body').innerHTML = head + tabs + body + `<button class="btn" data-act="plan-new" style="margin-top:20px">Nový plán</button>`;
+  $('#sheet-body').innerHTML = dsum + head + tabs + body + `<button class="btn" data-act="plan-new" style="margin-top:20px">Nový plán</button>`;
+}
+
+function recipeDietBox(r, d) {
+  const info = recipeDiet(r);
+  const bad = d.allergens.filter(a => info.allergens.includes(a));
+  let html = '';
+  if (bad.length) html += `<div class="diet-box bad"><b>Pozor, obsahuje:</b> ${bad.map(a => ALLERGENS.find(x => x[0] === a)[1]).join(', ')}</div>`;
+  if (d.gf) html += info.swaps.length
+    ? `<div class="diet-box"><b>Bezlepková úprava</b>${info.swaps.map(s => `<p>${esc(s.from)} <span class="muted">→</span> <b>${esc(s.to)}</b></p>`).join('')}</div>`
+    : '<div class="diet-box ok"><b>Bez lepku</b> v surovinách. Pri hotových výrobkoch (koreniny, omáčky) skontroluj obal.</div>';
+  return html;
 }
 
 function eatRecipe(id) {
@@ -822,7 +916,7 @@ function openAllRecipes() {
     const nq = norm($('#recipe-q').value.trim());
     const hit = r => !nq || norm(r.title + ' ' + r.ing.join(' ')).includes(nq);
     $('#recipe-results').innerHTML = cats.map(c => {
-      const rs = BOOK.recipes.filter(r => r.cat === c.id && hit(r));
+      const rs = BOOK.recipes.filter(r => r.cat === c.id && hit(r) && fitsDiet(r, profileDiet()));
       return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3>
         <div class="rgrid">${rs.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '';
     }).join('') || '<div class="empty">Nič sa nenašlo.</div>';
@@ -932,6 +1026,7 @@ const AI_SCHEMA = {
     meal_name: { type: 'string' },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
     note: { type: 'string' },
+    description: { type: 'string' },
     items: {
       type: 'array',
       items: {
@@ -945,13 +1040,15 @@ const AI_SCHEMA = {
           fat: { type: 'number' },
           fiber: { type: 'number' },
           health_score: { type: 'integer' },
+          gluten: { type: 'string', enum: ['nie', 'ano', 'mozno'] },
+          allergens: { type: 'array', items: { type: 'string' } },
         },
-        required: ['name', 'grams', 'kcal', 'protein', 'carbs', 'fat', 'fiber', 'health_score'],
+        required: ['name', 'grams', 'kcal', 'protein', 'carbs', 'fat', 'fiber', 'health_score', 'gluten', 'allergens'],
         additionalProperties: false,
       },
     },
   },
-  required: ['meal_name', 'confidence', 'note', 'items'],
+  required: ['meal_name', 'confidence', 'note', 'description', 'items'],
   additionalProperties: false,
 };
 
@@ -962,6 +1059,9 @@ const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu ide
 - Názvy píš po slovensky, krátko (napr. "Ryža biela varená").
 - health_score 1-10: 10 = nespracované, výživné potraviny; 5 = bežné; 1 = ultraspracované, veľa cukru, vyprážané.
 - note: 1 krátka veta po slovensky, zhodnoť jedlo vzhľadom na cieľ používateľa.
+- description: 1-2 vety po slovensky, z čoho je jedlo pravdepodobne pripravené (múka, cesto, obal, omáčka, príloha).
+- gluten pri každej položke: "ano" ak obsahuje lepok (pšenica, raž, jačmeň, bežný ovos, strúhanka, väčšina cestovín a pečiva), "nie" ak je prirodzene bez lepku, "mozno" ak sa to z fotky nedá určiť (napr. omáčka zahustená múkou, obaľované).
+- allergens pri každej položke: zoznam z [mlieko, vajcia, orechy, arasidy, ryby, korysy, soja, sezam, zeler, horcica], ktoré položka pravdepodobne obsahuje. Lepok sem nepíš.
 - Ak na fotke nie je jedlo, vráť prázdne items a vysvetli to v note.
 - Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`;
 
@@ -1010,6 +1110,7 @@ async function analyzeFood({ image, text }) {
   content.push({
     type: 'text',
     text: `Cieľ používateľa: ${goal}${t ? ` (${t.kcal} kcal, ${t.p} g bielkovín denne)` : ''}.\n` +
+      (dietActive(profileDiet()) ? `Strava používateľa: ${dietSummary(profileDiet())}. Pri lepku a alergénoch buď opatrný a v note upozorni, ak jedlo pre neho nie je vhodné.\n` : '') +
       (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.'),
   });
   return callClaude({ system: AI_SYSTEM, content, schema: AI_SCHEMA });
@@ -1118,11 +1219,27 @@ async function runAI({ image, text }) {
   }
 }
 
+function glutenTag(g) {
+  if (!g) return '';
+  return g === 'nie' ? '<span class="tag ok-tag">bez lepku</span>' : g === 'ano' ? '<span class="tag bad-tag">lepok</span>' : '<span class="tag warn-tag">možno lepok</span>';
+}
+
+function photoDietBox(items) {
+  const d = profileDiet();
+  if (!dietActive(d)) return '';
+  const gl = d.gf && items.filter(it => it.gluten !== 'nie');
+  const al = items.flatMap(it => (it.allergens || []).filter(a => d.allergens.includes(a)).map(a => [it.name, a]));
+  if (!(gl && gl.length) && !al.length) return '<div class="diet-box ok"><b>Vyzerá to v poriadku</b> pre tvoju stravu.</div>';
+  return `<div class="diet-box bad"><b>Pozor</b>
+    ${gl && gl.length ? `<p>Lepok ${gl.some(it => it.gluten === 'ano') ? '' : 'možno '}v: ${gl.map(it => esc(it.name)).join(', ')}</p>` : ''}
+    ${al.length ? `<p>Alergény: ${al.map(([n, a]) => `${esc(n)} (${ALLERGENS.find(x => x[0] === a)?.[1] || a})`).join(', ')}</p>` : ''}</div>`;
+}
+
 function showAIResult(res) {
   const items = (res.items || []).map(it => {
     const g = Math.max(1, Number(it.grams) || 1);
     return { name: it.name, g, base: g, kcal: it.kcal, p: it.protein, c: it.carbs, f: it.fat, fib: it.fiber,
-      score: Math.min(10, Math.max(1, Math.round(it.health_score || 5))) };
+      score: Math.min(10, Math.max(1, Math.round(it.health_score || 5))), gluten: it.gluten || 'mozno', allergens: it.allergens || [] };
   });
   const thumb = pendingPhoto?.thumb;
   const draw = () => {
@@ -1139,7 +1256,9 @@ function showAIResult(res) {
           <div><b>${r0(tot.c)}/${r0(tot.f)}</b><div class="lbl">sach./tuky g</div></div>
         </div>
         ${res.note ? `<p class="small" style="margin-top:10px">${esc(res.note)}</p>` : ''}
+        ${res.description ? `<p class="small muted" style="margin-top:6px">${esc(res.description)}</p>` : ''}
       </div>
+      ${photoDietBox(items)}
       ${items.map((it, i) => {
         const k = it.g / it.base;
         return `<div class="ai-item"><div class="row">
@@ -1147,7 +1266,7 @@ function showAIResult(res) {
           <input class="input grams" data-ai-g="${i}" type="number" inputmode="decimal" value="${r0(it.g)}" aria-label="gramy">
           <button class="round sm" data-ai-del="${i}" aria-label="Odstrániť">${icon('close', 14, 2.4)}</button></div>
           <div class="small muted" style="margin-top:6px">${r0(it.kcal * k)} kcal · B ${r0(it.p * k)} · S ${r0(it.c * k)} · T ${r0(it.f * k)}
-          · <span class="score ${scoreClass(it.score)}">${it.score}</span></div></div>`;
+          · <span class="score ${scoreClass(it.score)}">${it.score}</span> ${glutenTag(it.gluten)}</div></div>`;
       }).join('')}
       <p class="small muted" style="margin:4px 0 12px">Ak gramy nesedia, prepíš ich, hodnoty sa prepočítajú.</p>
       ${items.length ? '<button class="btn primary" id="ai-save">Uložiť</button>' : '<div class="empty">AI nenašla žiadne jedlo.</div>'}
@@ -1168,7 +1287,7 @@ function showAIResult(res) {
       const out = items.filter(it => it.g > 0).map((it, i) => {
         const k = it.g / it.base;
         return { name: it.name.trim() || 'Jedlo', g: it.g, kcal: it.kcal * k, p: it.p * k, c: it.c * k, f: it.f * k,
-          fib: it.fib * k, score: it.score, thumb: i === 0 ? thumb : undefined };
+          fib: it.fib * k, score: it.score, gluten: it.gluten, allergens: it.allergens, thumb: i === 0 ? thumb : undefined };
       });
       addEntries(out, thumb ? 'foto' : 'text');
     };
@@ -1187,6 +1306,8 @@ function addEntries(list, src) {
     const e = { id: uid(), ts: now, date: curDate, src, name: it.name, g: r1(it.g),
       kcal: r1(it.kcal), p: r1(it.p), c: r1(it.c), f: r1(it.f), fib: r1(it.fib), score: it.score };
     if (it.thumb) e.thumb = it.thumb;
+    if (it.gluten) e.gluten = it.gluten;
+    if (it.allergens?.length) e.allergens = it.allergens;
     S.entries.push(e);
   }
   save();
@@ -1268,6 +1389,10 @@ function openProfile() {
         [500, 'Rýchle priberanie (+500 kcal)'],
         ['x', `Vlastné (+${p.surplus} kcal)`],
       ])}</select></label>
+      <h3 class="sub-h">Strava</h3>
+      <div class="chips"><button type="button" class="chip-btn ${p.glutenFree ? 'on' : ''}" data-pgf="1">Bezlepková (celiakia)</button>${ALLERGENS.map(([k, l]) =>
+        `<button type="button" class="chip-btn ${(p.allergens || []).includes(k) ? 'on' : ''}" data-pal="${k}">Alergia: ${l.toLowerCase()}</button>`).join('')}</div>
+      <p class="small muted" style="margin:8px 0 14px">Recepty s alergénom sa nezobrazia. Pri lepku ukážem bezlepkovú úpravu receptu.</p>
       <button class="btn primary">Uložiť</button>
     </form>
     ${t ? `<p class="small muted" style="margin:10px 0 0">Dnešný cieľ ${t.kcal} kcal · bielkoviny ${t.p} g · sacharidy ${t.c} g · tuky ${t.f} g.</p>` : ''}
@@ -1347,6 +1472,14 @@ document.addEventListener('click', ev => {
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
   else if (d.act === 'cook') cookStart();
+  else if (d.pgf) { S.profile.glutenFree = !S.profile.glutenFree; save(); t.classList.toggle('on'); planForm.gf = null; render(); }
+  else if (d.pal) {
+    const a = S.profile.allergens || [];
+    S.profile.allergens = a.includes(d.pal) ? a.filter(x => x !== d.pal) : [...a, d.pal];
+    save(); t.classList.toggle('on'); planForm.allergens = null; render();
+  }
+  else if (d.pdiet) { planForm.gf = !planForm.gf; t.classList.toggle('on'); }
+  else if (d.pall) { planForm.allergens = planForm.allergens.includes(d.pall) ? planForm.allergens.filter(x => x !== d.pall) : [...planForm.allergens, d.pall]; t.classList.toggle('on'); }
   else if (d.act === 'plan') openPlan();
   else if (d.act === 'plan-new') planStep1();
   else if (d.act === 'plan-go') {
