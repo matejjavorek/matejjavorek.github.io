@@ -285,3 +285,13 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .shop-item .info { flex: 1; min-width: 0; display: grid; }
 .shop-item .prices { display: grid; text-align: right; font-variant-numeric: tabular-nums; }
 .shop-item .prices b { font-weight: 600; }
+
+/* Strava: lepok a alergie */
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; margin-top: 4px; justify-self: start; }
+.ok-tag { background: rgba(48, 209, 88, 0.18); color: var(--green); }
+.warn-tag { background: rgba(255, 159, 10, 0.18); color: var(--orange); }
+.bad-tag { background: rgba(255, 69, 58, 0.18); color: var(--red); }
+.diet-box { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-row); background: rgba(255, 159, 10, 0.12); font-size: 14px; display: grid; gap: 6px; }
+.diet-box.ok { background: rgba(48, 209, 88, 0.12); }
+.diet-box.bad { background: rgba(255, 69, 58, 0.14); }
+.diet-box p { font-size: 13px; }
