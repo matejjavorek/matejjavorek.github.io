@@ -246,6 +246,7 @@ function render() {
   </div></div>`;
 
   html += suppsCard();
+  html += scanCard();
 
   // Váha
   const ws = sortedWeights();
@@ -300,13 +301,60 @@ function openDayType() {
     <button class="btn primary" data-act="daytype-save">Uložiť</button>`);
 }
 
+// ---------- Skener na hlavnej stránke ----------
+function scanCard() {
+  const last = (S.scans || [])[0];
+  return `<button class="card scan-card" data-act="scan">
+    <span class="ico scan">${icon('barcode', 22)}</span>
+    <span class="tile-main"><b>Skenovať potravinu</b>
+      <span class="small muted">${last ? `Naposledy: ${esc(last.name)}` : 'Zistíš, či je zdravá, na škále 0-10'}</span></span>
+    ${last ? scoreBadge(s10(last.score)) : icon('right', 18, 2.2)}</button>`;
+}
+
 // ---------- Suplementy ----------
+const SUPP_PRESETS = [
+  ['Kreatín', '💪', '3-5 g denne, sila a objem'],
+  ['Proteín', '🥤', 'doplnenie bielkovín'],
+  ['Omega-3', '🐟', 'k jedlu, srdce a regenerácia'],
+  ['Magnézium', '🌙', 'večer, spánok a kŕče'],
+  ['Vitamín D', '☀️', 'ráno s jedlom, imunita'],
+  ['Zinok', '🛡️', 'imunita a hormóny'],
+  ['Vitamín C', '🍊', 'imunita'],
+  ['Elektrolyty', '⚡', 'pri futbale a v teple'],
+  ['Kolagén', '🦴', 'kĺby a šľachy'],
+  ['B-komplex', '🔋', 'energia'],
+  ['Ashwagandha', '🧘', 'stres a spánok'],
+  ['Multivitamín', '💊', 'ráno'],
+];
+function suppInfo(name) { return SUPP_PRESETS.find(x => norm(x[0]) === norm(name)) || [name, '💊', '']; }
+
 function suppsCard() {
   const list = S.profile.suppList || [];
-  if (!list.length) return '';
-  const done = S.supps?.[curDate] || [];
-  return `<div class="card supps"><div class="tile-label" style="margin-bottom:10px">Suplementy</div>
-    <div class="chips">${list.map(n => `<button class="chip-btn ${done.includes(n) ? 'on' : ''}" data-supp="${esc(n)}">${done.includes(n) ? '✓ ' : ''}${esc(n)}</button>`).join('')}</div></div>`;
+  const done = (S.supps?.[curDate] || []).filter(n => list.includes(n));
+  if (!list.length) return `<button class="card scan-card" data-act="supp-edit"><span class="ico supp">💊</span>
+    <span class="tile-main"><b>Suplementy</b><span class="small muted">Vyber, čo berieš, a odškrtávaj si to každý deň.</span></span>${icon('plus', 18, 2.4)}</button>`;
+  const all = done.length === list.length;
+  return `<div class="card supps">
+    <div class="supp-head"><span class="tile-label">Suplementy</span>
+      <span class="supp-count ${all ? 'all' : ''}">${all ? '✓ všetko' : `${done.length} z ${list.length}`}</span>
+      <button class="round sm" data-act="supp-edit" aria-label="Upraviť suplementy">${icon('plus', 16, 2.4)}</button></div>
+    <div class="bar"><i style="width:${(done.length / list.length) * 100}%;background:var(--green)"></i></div>
+    <div class="supp-grid">${list.map(n => { const [name, emoji, hint] = suppInfo(n); const on = done.includes(n); return `
+      <button class="supp ${on ? 'on' : ''}" data-supp="${esc(n)}" aria-pressed="${on}">
+        <span class="supp-ico">${emoji}${on ? `<i>${icon('check', 12, 3.2)}</i>` : ''}</span>
+        <span class="supp-name">${esc(name)}</span>${hint ? `<span class="supp-hint">${esc(hint)}</span>` : ''}</button>`; }).join('')}</div></div>`;
+}
+
+function openSuppEdit() {
+  const list = S.profile.suppList || [];
+  const custom = list.filter(n => !SUPP_PRESETS.some(x => norm(x[0]) === norm(n)));
+  openSheet('Moje suplementy', `
+    <p class="small muted" style="margin-bottom:12px">Ťukni na to, čo berieš. Na hlavnej stránke si to potom každý deň odškrtneš.</p>
+    <div class="supp-grid edit">${SUPP_PRESETS.map(([n, e, h]) => `<button class="supp ${list.includes(n) ? 'on' : ''}" data-supp-pick="${esc(n)}">
+      <span class="supp-ico">${e}${list.includes(n) ? `<i>${icon('check', 12, 3.2)}</i>` : ''}</span><span class="supp-name">${esc(n)}</span><span class="supp-hint">${esc(h)}</span></button>`).join('')}
+      ${custom.map(n => `<button class="supp on" data-supp-pick="${esc(n)}"><span class="supp-ico">💊<i>${icon('check', 12, 3.2)}</i></span><span class="supp-name">${esc(n)}</span><span class="supp-hint">vlastný</span></button>`).join('')}</div>
+    <h3 class="sub-h">Pridať vlastný</h3>
+    <div class="row"><input class="input" id="supp-new" placeholder="napr. Beta-alanín" style="flex:1"><button class="btn sm primary" data-act="supp-add">Pridať</button></div>`);
 }
 
 // ---------- Moje jedlá (obľúbené) ----------
@@ -1528,12 +1576,12 @@ async function openScan() {
   const recent = (S.scans || []).slice(0, 6);
   openSheet('Skenovať obal', `
     <div class="scan-view"><video id="scan-video" playsinline muted></video><span class="scan-frame"></span></div>
-    <p class="small muted" style="margin:8px 0 12px">Namier kameru na čiarový kód na obale.</p>
+    <p class="small muted" style="margin:8px 0 12px">Namier kameru na čiarový kód. Ukážem, či je potravina zdravá (0-10). Do jedál sa nič nezapisuje.</p>
     <div class="row"><input class="input" id="scan-code" inputmode="numeric" placeholder="alebo zadaj číslo kódu" style="flex:1">
       <button class="btn sm primary" data-act="scan-code">Hľadať</button></div>
     <button class="btn" data-act="scan-photo" style="margin-top:10px">${icon('camera', 18)}Odfotiť čiarový kód</button>
-    ${recent.length ? `<h3 class="sub-h">Naposledy</h3><div class="list">${recent.map(x => `<button class="list-item" data-scan="${x.code}">
-      <span>${esc(x.name)}</span><span class="score ${x.score >= 65 ? 's-good' : x.score >= 40 ? 's-mid' : 's-bad'}">${x.score}</span></button>`).join('')}</div>` : ''}`);
+    ${recent.length ? `<h3 class="sub-h">Naposledy</h3><div class="list">${recent.map(x => `<button class="list-item" ${String(x.code).startsWith('foto-') ? 'disabled' : `data-scan="${x.code}"`}>
+      <span>${esc(x.name)}</span>${scoreBadge(s10(x.score))}</button>`).join('')}</div>` : ''}`);
   try {
     await loadZxing();
     if ($('#sheet-bg').hidden || !$('#scan-video')) return;
@@ -1603,6 +1651,19 @@ function assessProduct(p) {
   return { ingr, adds, flags, allergens, traces, gluten, score: Math.max(0, Math.min(100, Math.round(score))) };
 }
 
+// 0 = červená, 5 = žltá, 10 = zelená.
+function scoreColor(s10) {
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const red = [255, 69, 58], yellow = [255, 204, 0], green = [48, 199, 88];
+  const t = Math.max(0, Math.min(10, s10)) / 10;
+  const c = t < 0.5 ? mix(red, yellow, t * 2) : mix(yellow, green, (t - 0.5) * 2);
+  return `rgb(${c.join(',')})`;
+}
+function scoreBadge(s10, big) {
+  return `<span class="sbadge ${big ? 'big' : ''}" style="--sc:${scoreColor(s10)}">${s10}</span>`;
+}
+function s10(score100) { return Math.round(score100 / 10); }
+
 function productVerdict(score) {
   if (score >= 75) return 'Dobrá voľba';
   if (score >= 55) return 'V poriadku';
@@ -1626,10 +1687,11 @@ function showProduct(code, p) {
   $('#sheet-body').innerHTML = `
     ${p.image_front_small_url ? `<img class="product-img" src="${esc(p.image_front_small_url)}" alt="">` : ''}
     <p class="small muted" style="margin-bottom:14px">${esc([p.brands, p.quantity].filter(Boolean).join(' · '))}</p>
-    <div class="card meter-card" style="padding:30px 0 4px;background:none">
-      <span class="meter"><i style="left:${Math.min(97, Math.max(3, a.score))}%"><b>${a.score}</b></i></span>
-      <span class="meter-ends"><span>Nezdravé</span><span>Zdravé</span></span></div>
-    <p style="margin:6px 0 14px"><b>${productVerdict(a.score)}</b> · Nutri-Score ${p.nutriscore_grade ? p.nutriscore_grade.toUpperCase() : '-'} · ${p.nova_group ? `spracovanie ${p.nova_group}/4${p.nova_group === 4 ? ' (ultraspracované)' : ''}` : 'spracovanie neznáme'}</p>
+    <div class="product-score">${scoreBadge(s10(a.score), true)}<div><b style="color:${scoreColor(s10(a.score))}">${productVerdict(a.score)}</b>
+      <span class="small muted">skóre ${s10(a.score)} z 10</span></div></div>
+    <div class="meter-card scan-meter"><span class="meter"><i style="left:${Math.min(97, Math.max(3, a.score))}%"></i></span>
+      <span class="meter-ends"><span>0 nezdravé</span><span>10 zdravé</span></span></div>
+    <p class="small muted" style="margin:4px 0 14px">Nutri-Score ${p.nutriscore_grade ? p.nutriscore_grade.toUpperCase() : '-'} · ${p.nova_group ? `spracovanie ${p.nova_group}/4${p.nova_group === 4 ? ' (ultraspracované)' : ''}` : 'spracovanie neznáme'}</p>
     ${d.gf && a.gluten ? '<div class="diet-box bad"><b>Obsahuje lepok</b></div>' : d.gf && a.traces.includes('lepok') ? '<div class="diet-box"><b>Môže obsahovať stopy lepku</b></div>' : ''}
     ${bad.length ? `<div class="diet-box bad"><b>Pozor, obsahuje:</b> ${bad.map(x => ALLERGENS.find(y => y[0] === x)?.[1]).join(', ')}</div>` : ''}
     ${a.adds.length || a.flags.length ? `<h3 class="sub-h">Na čo si dať pozor</h3><div class="list">
@@ -1658,7 +1720,7 @@ const PRODUCT_SCHEMA = {
   additionalProperties: false,
 };
 const PRODUCT_SYSTEM = `Si nutričný poradca športovca. Posúď potravinu podľa zloženia: kvalita surovín, miera spracovania, cukor, soľ, tuky, prídavné látky (napr. glutaman sodný, dusitany, umelé sladidlá, farbivá) a ich možné účinky na zdravie.
-score: 0-100 (0 = veľmi nezdravé, 100 = výborné). verdict: 1-2 vety po slovensky. good a bad: krátke body po slovensky (max. 4 každé), pri prídavných látkach uveď možný účinok.
+score: celé číslo 0-10 (0 = veľmi nezdravé, 5 = priemer, 10 = výborné). verdict: 1-2 vety po slovensky. good a bad: krátke body po slovensky (max. 4 každé), pri prídavných látkach uveď možný účinok.
 gluten: či výrobok obsahuje lepok. product_name a ingredients: názov a zloženie (ak ich máš z fotky, prepíš ich). Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`;
 
 async function productAI(btn, image) {
@@ -1674,12 +1736,18 @@ async function productAI(btn, image) {
     const r = await callClaude({ system: PRODUCT_SYSTEM, content, schema: PRODUCT_SCHEMA, effort: 'low' });
     if (image) {
       wizHead(r.product_name || 'Výrobok', null);
-      $('#sheet-body').innerHTML = `<div class="card meter-card" style="padding:30px 0 4px;background:none">
-        <span class="meter"><i style="left:${Math.min(97, Math.max(3, r.score))}%"><b>${r.score}</b></i></span>
-        <span class="meter-ends"><span>Nezdravé</span><span>Zdravé</span></span></div><div id="product-ai"></div>
+      $('#sheet-body').innerHTML = `<div class="product-score">${scoreBadge(r.score, true)}<div><b style="color:${scoreColor(r.score)}">${productVerdict(r.score * 10)}</b>
+        <span class="small muted">skóre ${r.score} z 10</span></div></div>
+        <div class="meter-card scan-meter"><span class="meter"><i style="left:${Math.min(97, Math.max(3, r.score * 10))}%"></i></span>
+        <span class="meter-ends"><span>0 nezdravé</span><span>10 zdravé</span></span></div><div id="product-ai"></div>
         ${r.ingredients ? `<h3 class="sub-h">Zloženie</h3><p class="small">${esc(r.ingredients)}</p>` : ''}`;
     } else btn.remove();
-    $('#product-ai').innerHTML = `<div class="diet-box ${r.score >= 55 ? 'ok' : r.score >= 35 ? '' : 'bad'}"><b>AI: ${productVerdict(r.score)} (${r.score})</b><p>${esc(r.verdict)}</p>
+    r.score = Math.max(0, Math.min(10, Math.round(r.score)));
+    if (image) {
+      S.scans = [{ code: 'foto-' + Date.now(), name: r.product_name || 'Výrobok z fotky', score: r.score * 10 }, ...(S.scans || [])].slice(0, 20);
+      save();
+    }
+    $('#product-ai').innerHTML = `<div class="diet-box ${r.score >= 6 ? 'ok' : r.score >= 4 ? '' : 'bad'}"><b>AI hodnotí ${r.score} z 10: ${productVerdict(r.score * 10).toLowerCase()}</b><p>${esc(r.verdict)}</p>
       ${r.good.length ? `<p><b>Dobré:</b> ${r.good.map(esc).join(', ')}</p>` : ''}
       ${r.bad.length ? `<p><b>Zlé:</b> ${r.bad.map(esc).join(', ')}</p>` : ''}
       ${d.gf && r.gluten !== 'nie' ? `<p><b>Lepok:</b> ${r.gluten === 'ano' ? 'obsahuje' : 'možno obsahuje'}</p>` : ''}</div>`;
@@ -1968,7 +2036,6 @@ function openProfile() {
         [500, 'Rýchle priberanie (+500 kcal)'],
         ['x', `Vlastné (+${p.surplus} kcal)`],
       ])}</select></label>
-      <label class="field">Suplementy (oddeľ čiarkou)<input name="supps" value="${esc((p.suppList || []).join(', '))}" placeholder="Omega-3, Magnézium, Kreatín"></label>
       <h3 class="sub-h">Strava</h3>
       <div class="chips"><button type="button" class="chip-btn ${p.glutenFree ? 'on' : ''}" data-pgf="1">Bezlepková (celiakia)</button>${ALLERGENS.map(([k, l]) =>
         `<button type="button" class="chip-btn ${(p.allergens || []).includes(k) ? 'on' : ''}" data-pal="${k}">Alergia: ${l.toLowerCase()}</button>`).join('')}</div>
@@ -2001,7 +2068,6 @@ function openProfile() {
     const fd = new FormData(ev.target);
     const num = k => { const v = Number(String(fd.get(k)).replace(',', '.')); return v > 0 ? v : null; };
     p.name = String(fd.get('name') || '').trim();
-    p.suppList = String(fd.get('supps') || '').split(',').map(x => x.trim()).filter(Boolean);
     p.sex = fd.get('sex');
     p.age = num('age');
     p.height = num('height');
@@ -2088,6 +2154,17 @@ document.addEventListener('click', ev => {
     const w = Number($('#watch-kcal').value) || 0;
     S.days[curDate] = { ...(S.days[curDate] || {}), watch: w > 0 ? w : null };
     save(); closeSheet(); render();
+  }
+  else if (d.act === 'supp-edit') openSuppEdit();
+  else if (d.suppPick) {
+    const list = S.profile.suppList || [];
+    S.profile.suppList = list.includes(d.suppPick) ? list.filter(x => x !== d.suppPick) : [...list, d.suppPick];
+    save(); render(); openSuppEdit();
+  }
+  else if (d.act === 'supp-add') {
+    const n = $('#supp-new').value.trim();
+    if (n && !(S.profile.suppList || []).includes(n)) { S.profile.suppList = [...(S.profile.suppList || []), n]; save(); render(); }
+    openSuppEdit();
   }
   else if (d.supp) {
     const list = S.supps[curDate] || [];
