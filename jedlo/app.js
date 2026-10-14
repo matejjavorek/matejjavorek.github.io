@@ -456,8 +456,8 @@ function dayMeter(date, t, tot) {
   const pos = score == null ? null : Math.min(97, Math.max(3, score));
   // Ťuknutie na pás = zhodnotenie dňa s AI (ak je čo hodnotiť).
   return `<button class="card meter-card" ${score != null ? 'data-act="ai-day"' : 'disabled'}
-      aria-label="${score != null ? `Hodnotenie dňa ${score} zo 100: ${verdict(score)}. Ťukni pre zhodnotenie s AI.` : 'Zatiaľ bez hodnotenia'}">
-    <span class="meter">${pos != null ? `<i style="left:${pos}%"><b>${score}</b></i>` : ''}</span>
+      aria-label="${score != null ? `Hodnotenie dňa ${s10(score)} z 10: ${verdict(score)}. Ťukni pre zhodnotenie s AI.` : 'Zatiaľ bez hodnotenia'}">
+    <span class="meter">${pos != null ? `<i style="left:${pos}%"><b>${s10(score)}</b></i>` : ''}</span>
     <span class="meter-ends"><span>Nezdravo</span><span>Zdravo</span></span>
     ${useAi ? `<span class="meter-text">${esc(ai.text)}</span>` : ''}
   </button>`;
@@ -546,7 +546,7 @@ function weekStats() {
 const PASS_KEY = 'jedlo.kucharka.heslo';
 let BOOK = null;
 try { BOOK = JSON.parse(localStorage.getItem(BOOK_KEY) || 'null'); } catch { BOOK = null; }
-let cryptoKey = null;
+let cryptoKey = null, keyPromise = null;
 const photoUrls = new Map();
 
 const MEAL_TYPES = [
@@ -630,7 +630,9 @@ async function photoUrl(id) {
   if (!cryptoKey) {
     const pass = storedPass();
     if (!pass || !BOOK?.salt) return null;
-    cryptoKey = await deriveKey(pass, new Uint8Array(BOOK.salt.match(/../g).map(h => parseInt(h, 16))));
+    // Kľúč sa odvodzuje len raz, aj keď sa naraz načítava viac fotiek.
+    keyPromise = keyPromise || deriveKey(pass, new Uint8Array(BOOK.salt.match(/../g).map(h => parseInt(h, 16))));
+    try { cryptoKey = await keyPromise; } catch { keyPromise = null; return null; }
   }
   try {
     const res = await fetch(`kucharka-foto/${id}.bin`);
@@ -645,13 +647,21 @@ async function photoUrl(id) {
   }
 }
 
-// Doplní fotky do všetkých <img data-photo> v paneli.
-async function fillPhotos(root) {
-  for (const img of root.querySelectorAll('img[data-photo]')) {
-    const url = await photoUrl(Number(img.dataset.photo));
-    if (!img.isConnected) return;
-    if (url) { img.src = url; img.classList.add('loaded'); } else img.closest('.photo')?.classList.add('none');
+// Fotky sa načítajú, až keď sa k nim dostaneš (pri 300 receptoch by inak išlo 12 MB naraz).
+async function loadPhoto(img) {
+  const url = await photoUrl(Number(img.dataset.photo));
+  if (!img.isConnected) return;
+  if (url) { img.src = url; img.classList.add('loaded'); } else img.closest('.photo')?.classList.add('none');
+}
+const photoObs = 'IntersectionObserver' in window ? new IntersectionObserver(list => {
+  for (const en of list) {
+    if (!en.isIntersecting) continue;
+    photoObs.unobserve(en.target);
+    loadPhoto(en.target);
   }
+}, { rootMargin: '400px 0px' }) : null;
+function fillPhotos(root) {
+  for (const img of root.querySelectorAll('img[data-photo]')) photoObs ? photoObs.observe(img) : loadPhoto(img);
 }
 
 function chipLabel(id) { return BOOK?.chips.find(c => c.id === id)?.label.split(' (')[0] || id; }
@@ -676,30 +686,31 @@ function recipesCard() {
 // ---------- Strava: bezlepková a alergie ----------
 // Lepok: čo v recepte obsahuje lepok a čím to nahradiť. Riadok s „bezlepk…“ sa ignoruje.
 const GLUTEN_RULES = [
-  [/kypřic|prášk[a-zů]* do pečiva/i, 'bezlepkový prášok do pečiva'],
-  [/(?<!rýžov[éáýou]+ |kukuřičn[éáýou]+ |pohankov[éáýou]+ |mandlov[éáýou]+ |kokosov[éáýou]+ |cizrnov[éáýou]+ |bramborov[éáýou]+ |tapiokov[éáýou]+ )mouk/i, 'bezlepková múka (napr. ryžová alebo mix)'],
-  [/(?<!rýžov[éáýou]+ |jáhlov[éáýou]+ |pohankov[éáýou]+ |kukuřičn[éáýou]+ )vloč/i, 'certifikované bezlepkové ovsené vločky'],
-  [/(?<!kukuřičn[éáýou]+ )tortil|wrap|lavash|\bpit[ay]\b/i, 'kukuričné alebo bezlepkové tortilly'],
-  [/piškot|sušenk/i, 'bezlepkové piškoty / sušienky'],
-  [/strouhank|krutón/i, 'bezlepková strúhanka'],
-  [/chléb|chleb|(?<!do )pečiv|toast|bagel|rohlík|bulk|housk|baget|žeml/i, 'bezlepkový chlieb alebo pečivo'],
-  [/těstovin|špaget|penne|(?<!rýžov[éáýou]+ )nudl|lasagn|gnocchi|noky|fleky/i, 'bezlepkové cestoviny / noky'],
-  [/bulgur|kuskus|krupic|ječm|kroupy|seitan|špald|pšenič|žitn/i, 'quinoa, pohánka alebo ryža'],
+  [/kypřic|prášk[a-zů]* do pečiva|prášok do pečiva/i, 'bezlepkový prášok do pečiva'],
+  [/(?<!(?:rýžov|ryžov|kukuřičn|kukuričn|pohankov|pohánkov|mandlov|mandľov|kokosov|cizrnov|cícerov|bramborov|zemiakov|tapiokov|bezlepkov)\S* )(?:mouk|múk|múčk)/i, 'bezlepková múka (napr. ryžová alebo mix)'],
+  [/(?<!(?:rýžov|ryžov|jáhlov|pšenov|pohankov|pohánkov|kukuřičn|kukuričn|bezlepkov)\S* )vloč/i, 'certifikované bezlepkové ovsené vločky'],
+  [/(?<!(?:kukuřičn|kukuričn)\S* )tortil|wrap|lavash|\bpit[ay]\b/i, 'kukuričné alebo bezlepkové tortilly'],
+  [/piškot|sušenk|sušienk|keks/i, 'bezlepkové piškóty / sušienky'],
+  [/strouhank|strúhank|krutón/i, 'bezlepková strúhanka'],
+  [/chléb|chleb|chlieb|(?<!do )pečiv|toast|bagel|rohlík|bulk|housk|baget|žeml/i, 'bezlepkový chlieb alebo pečivo'],
+  [/těstovin|cestovin|špaget|penne|(?<!(?:rýžov|ryžov)\S* )nudl|rezanc|lasagn|gnocchi|noky|fleky|halušk/i, 'bezlepkové cestoviny / noky'],
+  [/bulgur|kuskus|krupic|ječm|jačm|kroupy|krúp|seitan|špald|pšenič|pšenic|žitn|ražn/i, 'quinoa, pohánka alebo ryža'],
   [/sójov[áé] omáčk|teriyaki|worcester/i, 'tamari (bezlepková sójová omáčka)'],
-  [/granol|müsli|cereál/i, 'bezlepková granola'],
+  [/granol|müsli|musli|cereál/i, 'bezlepková granola'],
   [/\bpiv[oa]\b/i, 'bezlepkové pivo'],
 ];
+// Česky aj slovensky: kuchárka je preložená, ale analýza beží aj na vlastných receptoch.
 const ALLERGENS = [
-  ['mlieko', 'Mlieko / laktóza', /mlék|mléč|jogurt|skyr|tvaroh|sýr|cottage|smetan|(?<!arašídov[éého]+ |kešu |mandlov[éého]+ |ořechov[éého]+ )másl|ricott|mozzarel|parmaz|parmez|feta|halloumi|kefír|lučin|mascarpon|bryndz|burrat|ghí|čedar|eidam/i],
-  ['vajcia', 'Vajcia', /vejc|vajíč|vajec|vaječ|žloutk|bílk/i],
-  ['orechy', 'Orechy', /ořech|ořeš|mandl|kešu|lískov|pistáci|pekan|makadam/i],
-  ['arasidy', 'Arašidy', /arašíd/i],
-  ['ryby', 'Ryby', /losos|tuňák|tresk|ryb[íay]|sardin|makrel|ančov/i],
+  ['mlieko', 'Mlieko / laktóza', /(?<!(?:mandlov|mandľov|kokosov|ovesn|ovsen|rýžov|ryžov|sójov|rostlinn|rastlinn)\S* )(?:mlék|mliek)|mléč|mlieč|jogurt|skyr|tvaroh|sýr|\bsyr|cottage|smetan|smotan|šľahačk|(?<!(?:arašídov|arašidov|kešu|mandlov|mandľov|ořechov|orechov|kokosov)\S* )m[áa]sl|ricott|mozzarel|parmaz|parmez|feta|halloumi|kefír|lučin|mascarpon|bryndz|burrat|ghí|čedar|eidam|srvátk|syrovátk/i],
+  ['vajcia', 'Vajcia', /vejc|vajíč|vajec|vaječ|vajc|vajce|žloutk|žĺtk|bílk(?!ovin)|bielok|bielk(?!ovin)/i],
+  ['orechy', 'Orechy', /ořech|ořeš|orech|oriešk|orieš|mandl|mandľ|kešu|lískov|lieskov|pistáci|pistác|pekan|makadam/i],
+  ['arasidy', 'Arašidy', /arašíd|arašid/i],
+  ['ryby', 'Ryby', /losos|tuňák|tuniak|tresk|ryb(?!íz)[íiay]|sardin|makrel|ančov|anči/i],
   ['korysy', 'Kôrovce (krevety)', /krevet/i],
   ['soja', 'Sója', /sój|tofu|tempeh|edamame/i],
   ['sezam', 'Sezam', /sezam|tahini/i],
-  ['zeler', 'Zeler', /celer/i],
-  ['horcica', 'Horčica', /hořčic/i],
+  ['zeler', 'Zeler', /celer|zeler/i],
+  ['horcica', 'Horčica', /hořčic|horčic/i],
 ];
 
 function dietOf(form) {
@@ -709,9 +720,15 @@ function profileDiet() { return dietOf({ gf: S.profile.glutenFree, allergens: S.
 function dietActive(d) { return d.gf || d.allergens.length > 0; }
 
 // Analýza receptu pre danú stravu: zámeny pri lepku, nájdené alergény.
-const dietCache = new Map();
+// Recepty z kuchárky majú analýzu hotovú (r.diet, spravená z českého originálu), vlastné recepty sa analyzujú tu.
+const dietCache = new WeakMap();
 function recipeDiet(r) {
-  if (dietCache.has(r.id)) return dietCache.get(r.id);
+  if (dietCache.has(r)) return dietCache.get(r);
+  if (r.diet) {
+    const out = { swaps: r.diet.swaps.map(([i, to]) => ({ from: r.ing[i] || '', to })), allergens: r.diet.allergens };
+    dietCache.set(r, out);
+    return out;
+  }
   const lines = r.ing.filter(l => !/:$/.test(l));
   const swaps = new Map();
   for (const l of lines) {
@@ -721,7 +738,7 @@ function recipeDiet(r) {
   const text = lines.join(' \n ');
   const allergens = ALLERGENS.filter(([, , rx]) => rx.test(text)).map(([k]) => k);
   const out = { swaps: [...swaps.entries()].map(([sw, l]) => ({ from: l, to: sw })), allergens };
-  dietCache.set(r.id, out);
+  dietCache.set(r, out);
   return out;
 }
 
@@ -748,7 +765,7 @@ function rmeta(id) { return S.recipeMeta?.[id] || {}; }
 
 // Prepočet suroviny na 1 porciu: čísla na začiatku riadku, po „/“ a v zátvorke.
 const FRAC = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3 };
-const QTY_RX = /(^|\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|plát\w*|stroužk\w*|strúčik\w*|špetk\w*|kous\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?=[\s,).]|$)/g;
+const QTY_RX = /(^|\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|hrnč\w*|hrnk\w*|plát\w*|stroužk\w*|strúčik\w*|strúčk\w*|špetk\w*|štipk\w*|kous\w*|kús\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?=[\s,).]|$)/g;
 function parseQ(x) {
   if (FRAC[x] != null) return FRAC[x];
   if (x.includes('/')) { const [a, b] = x.split('/').map(Number); return b ? a / b : NaN; }
@@ -1095,7 +1112,7 @@ async function generatePlan() {
   const mealNames = PLAN_MEALS.filter(([k]) => f.meals.includes(k)).map(([k, l]) => `${k} (${l})`).join(', ');
   const prefs = PLAN_PREFS.filter(([k]) => f.prefs.includes(k)).map(([, l]) => l).join(', ');
   const res = await callClaude({
-    system: `Si plánovač jedál a nákupov pre športovca na Slovensku, ktorý chce nabrať svaly. Recepty sú z českej Športovej kuchárky.
+    system: `Si plánovač jedál a nákupov pre športovca na Slovensku, ktorý chce nabrať svaly. Recepty sú zo Športovej kuchárky.
 Pravidlá plánu:
 - Použi IBA recepty zo zoznamu (recipe_id). Každý deň naplánuj presne zvolené jedlá.
 - To isté jedlo smie byť najviac 2 dni po sebe (uvarí sa raz, zje sa 2×), nikdy 3×. Obed a večera v ten istý deň nech sú rôzne.
@@ -1734,6 +1751,7 @@ async function productAI(btn, image) {
       ? `Výrobok: ${lastProduct.name}. Zloženie: ${lastProduct.a.ingr || 'neznáme'}. Prídavné látky: ${(lastProduct.p.additives_tags || []).join(', ') || 'žiadne'}. Nutri-Score: ${lastProduct.p.nutriscore_grade || '?'}, NOVA: ${lastProduct.p.nova_group || '?'}.`
       : 'Na fotke je zloženie z obalu potraviny. Prečítaj ho a posúď.') + (dietActive(d) ? ` Strava používateľa: ${dietSummary(d)}.` : '') });
     const r = await callClaude({ system: PRODUCT_SYSTEM, content, schema: PRODUCT_SCHEMA, effort: 'low' });
+    r.score = Math.max(0, Math.min(10, Math.round(r.score)));
     if (image) {
       wizHead(r.product_name || 'Výrobok', null);
       $('#sheet-body').innerHTML = `<div class="product-score">${scoreBadge(r.score, true)}<div><b style="color:${scoreColor(r.score)}">${productVerdict(r.score * 10)}</b>
@@ -1742,7 +1760,6 @@ async function productAI(btn, image) {
         <span class="meter-ends"><span>0 nezdravé</span><span>10 zdravé</span></span></div><div id="product-ai"></div>
         ${r.ingredients ? `<h3 class="sub-h">Zloženie</h3><p class="small">${esc(r.ingredients)}</p>` : ''}`;
     } else btn.remove();
-    r.score = Math.max(0, Math.min(10, Math.round(r.score)));
     if (image) {
       S.scans = [{ code: 'foto-' + Date.now(), name: r.product_name || 'Výrobok z fotky', score: r.score * 10 }, ...(S.scans || [])].slice(0, 20);
       save();
@@ -2120,6 +2137,7 @@ document.addEventListener('click', ev => {
   else if (d.act === 'all-recipes') openAllRecipes();
   else if (d.act === 'book-lock') {
     BOOK = null;
+    cryptoKey = keyPromise = null;
     try { localStorage.removeItem(BOOK_KEY); localStorage.removeItem(PASS_KEY); } catch { /* nič */ }
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
@@ -2149,6 +2167,7 @@ document.addEventListener('click', ev => {
   else if (d.dtype) {
     S.days[curDate] = { ...(S.days[curDate] || {}), type: (S.days[curDate] || {}).type === d.dtype ? null : d.dtype };
     t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.dtype === S.days[curDate].type));
+    save(); render();
   }
   else if (d.act === 'daytype-save') {
     const w = Number($('#watch-kcal').value) || 0;
