@@ -167,6 +167,13 @@ const DAY_TYPES = [
   ['praca_trening', 'Práca + tréning', 1.15],
 ];
 const TRAINING = ['posilka', 'futbal', 'praca_trening'];
+const WEEKDAYS = ['nedeľu', 'pondelok', 'utorok', 'stredu', 'štvrtok', 'piatok', 'sobotu'];
+// Typ dňa: nastavený pre tento deň, inak opakovaný podľa dňa v týždni ('none' = zámerne žiadny).
+function dayType(date) {
+  const t = S.days?.[date]?.type;
+  if (t === 'none') return null;
+  return t || S.profile.week?.[parseDay(date).getDay()] || null;
+}
 function sortedWeights() { return [...S.weights].sort((a, b) => a.date.localeCompare(b.date)); }
 function currentWeight() { return S.weights.length ? sortedWeights().at(-1).kg : S.profile.weight; }
 
@@ -177,7 +184,7 @@ function targets(date) {
   const bmr = 10 * w + 6.25 * p.height - 5 * p.age + (p.sex === 'f' ? -161 : 5);
   // Typ dňa mení výdaj; kalórie z hodiniek majú prednosť (aktívne kcal + 10 % na trávenie).
   const day = S.days?.[date] || {};
-  const type = DAY_TYPES.find(d => d[0] === day.type);
+  const type = DAY_TYPES.find(d => d[0] === dayType(date));
   const tdee = day.watch ? (bmr + day.watch) * 1.1 : bmr * p.activity * (type ? type[2] : 1);
   const kcal = tdee + Number(p.surplus || 0);
   const protein = w * p.proteinPerKg;
@@ -186,7 +193,7 @@ function targets(date) {
   return {
     bmr: r0(bmr), tdee: r0(tdee), kcal: r0(kcal),
     p: r0(protein), c: r0(carbs), f: r0(fat),
-    fib: r0((kcal / 1000) * 14), water: r0((w * 35 + (TRAINING.includes(day.type) || day.watch > 400 ? 500 : 0)) / 250) * 250,
+    fib: r0((kcal / 1000) * 14), water: r0((w * 35 + (TRAINING.includes(dayType(date)) || day.watch > 400 ? 500 : 0)) / 250) * 250,
   };
 }
 
@@ -309,19 +316,25 @@ function render() {
 // ---------- Typ dňa ----------
 function dayTypeLabel(date) {
   const d = S.days?.[date] || {};
-  const type = DAY_TYPES.find(x => x[0] === d.type);
+  const type = DAY_TYPES.find(x => x[0] === dayType(date));
   const parts = [type ? type[1] : 'Typ dňa'];
   if (d.watch) parts.push(`hodinky ${r0(d.watch)} kcal`);
   return parts.join(' · ');
 }
 
+// Prekreslí panel a nechá rozpísané kalórie z hodiniek.
+function keepWatch(fn) { const v = $('#watch-kcal')?.value; fn(); if (v != null) $('#watch-kcal').value = v; }
+
 function openDayType() {
   const d = S.days[curDate] || {};
+  const cur = dayType(curDate), wd = parseDay(curDate).getDay();
+  const weekly = S.profile.week?.[wd];
   openSheet('Aký je deň?', `
-    <div class="chips">${DAY_TYPES.map(([k, l]) => `<button class="chip-btn ${d.type === k ? 'on' : ''}" data-dtype="${k}">${l}</button>`).join('')}</div>
-    <p class="small muted" style="margin:10px 0 18px">Podľa typu dňa sa zmení cieľ kalórií a sacharidov.</p>
+    <div class="chips">${DAY_TYPES.map(([k, l]) => `<button class="chip-btn ${cur === k ? 'on' : ''}" data-dtype="${k}">${l}</button>`).join('')}</div>
+    <p class="small muted" style="margin:10px 0 12px">Podľa typu dňa sa zmení cieľ kalórií a vody.</p>
+    <button class="chip-btn ${weekly && weekly === cur ? 'on' : ''}" data-act="daytype-week" style="margin-bottom:18px">${weekly && weekly === cur ? '✓ ' : ''}Opakovať každý ${WEEKDAYS[wd]}</button>
     <label class="field">Aktívne kalórie z hodiniek (nepovinné)
-      <input id="watch-kcal" type="number" inputmode="numeric" placeholder="napr. 950" value="${Number(d.watch) || ''}"></label>
+      <input id="watch-kcal" type="text" inputmode="numeric" autocomplete="off" placeholder="napr. 950" value="${Number(d.watch) || ''}"></label>
     <p class="small muted" style="margin:-4px 0 16px">Nájdeš ich v appke Huawei Health alebo Zdravie (aktívna energia). Keď ich zadáš, majú prednosť pred typom dňa.</p>
     <button class="btn primary" data-act="daytype-save">Uložiť</button>`);
 }
@@ -2457,12 +2470,18 @@ document.addEventListener('click', ev => {
   else if (d.act === 'product-ai') productAI(t);
   else if (d.act === 'daytype') openDayType();
   else if (d.dtype) {
-    S.days[curDate] = { ...(S.days[curDate] || {}), type: (S.days[curDate] || {}).type === d.dtype ? null : d.dtype };
-    t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.dtype === S.days[curDate].type));
-    save(); render();
+    S.days[curDate] = { ...(S.days[curDate] || {}), type: dayType(curDate) === d.dtype ? 'none' : d.dtype };
+    save(); render(); keepWatch(openDayType);
+  }
+  else if (d.act === 'daytype-week') {
+    const wd = parseDay(curDate).getDay(), cur = dayType(curDate);
+    S.profile.week = { ...(S.profile.week || {}) };
+    if (cur && S.profile.week[wd] !== cur) S.profile.week[wd] = cur; else delete S.profile.week[wd];
+    if (!cur) toast('Najprv vyber typ dňa.');
+    save(); render(); keepWatch(openDayType);
   }
   else if (d.act === 'daytype-save') {
-    const w = Number($('#watch-kcal').value) || 0;
+    const w = numIn($('#watch-kcal').value);
     S.days[curDate] = { ...(S.days[curDate] || {}), watch: w > 0 ? w : null };
     save(); closeSheet(); render();
   }

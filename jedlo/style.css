@@ -305,11 +305,13 @@ body:has(.sheet-bg:not([hidden])), body:has(.cook-mode:not([hidden])) { overflow
 .steps { margin: 0; padding-left: 22px; display: grid; gap: 10px; font-size: 15px; }
 
 .toast {
-  position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 30; pointer-events: none; text-align: center;
+  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; pointer-events: none; text-align: center;
   background: var(--card3); color: var(--text); padding: 10px 16px; border-radius: 14px;
   font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); max-width: calc(100% - 32px);
 }
 .toast[hidden] { display: none; }
+/* Na hlavnej stránke dole nad „+“, pri otvorenom paneli hore (dole sú tlačidlá panela). */
+body:has(.sheet-bg:not([hidden])) .toast, body:has(.cook-mode:not([hidden])) .toast { bottom: auto; top: calc(10px + env(safe-area-inset-top)); }
 .toast.has-act:not([hidden]) { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
 .toast-act { border: 0; background: none; color: var(--orange); font-weight: 600; font-size: 15px; padding: 6px 2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
