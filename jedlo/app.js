@@ -771,7 +771,7 @@ function rmeta(id) { return S.recipeMeta?.[id] || {}; }
 
 // Prepočet suroviny na 1 porciu: čísla na začiatku riadku, po „/“ a v zátvorke.
 const FRAC = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3 };
-const QTY_RX = /(^|\s\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|hrnč\w*|hrnk\w*|plát\w*|stroužk\w*|strúčik\w*|strúčk\w*|špetk\w*|štipk\w*|kous\w*|kús\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?=[\s,).]|$)/g;
+const QTY_RX = /(^|\s\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|hrnč\w*|hrnk\w*|plát\w*|stroužk\w*|strúčik\w*|strúčk\w*|špetk\w*|štipk\w*|kous\w*|kús\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?=[\s,).]|$)(?!\s*%)/g;
 function parseQ(x) {
   if (FRAC[x] != null) return FRAC[x];
   if (x.includes('/')) { const [a, b] = x.split('/').map(Number); return b ? a / b : NaN; }
