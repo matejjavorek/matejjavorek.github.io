@@ -21,6 +21,41 @@
   --water: #64d2ff;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
   --r-card: 18px; --r-row: 12px; --r-pill: 999px;
+  --on-accent: #000;
+}
+/* Svetlý režim podľa nastavenia iPhonu */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f2f2f7;
+    --card: #fff;
+    --card2: #e9e9ee;
+    --card3: #dcdce1;
+    --text: #000;
+    --muted: rgba(60, 60, 67, 0.6);
+    --faint: rgba(60, 60, 67, 0.3);
+    --sep: rgba(60, 60, 67, 0.2);
+    --orange: #ff9500;
+    --orange-ink: #c93400;
+    --green: #34c759;
+    --red: #ff3b30;
+    --yellow: #ffcc00;
+    --p: #007aff;
+    --c: #ffcc00;
+    --f: #ff2d55;
+    --fib: #af52de;
+    --water: #32ade6;
+    --on-accent: #fff;
+  }
+  .fab { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+  .toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); }
+  .sheet-bg { background: rgba(0, 0, 0, .35); }
+  .miss, .link-btn { color: var(--orange-ink); }
+  .s-good, .ok-tag, .ok { color: #248a3d; }
+  .s-mid { color: #8a6100; }
+  .s-bad, .bad-tag { color: #d70015; }
+  .warn-tag, .cm-n { color: var(--orange-ink); }
+  .star.on, .rating { color: #f5a623; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
@@ -62,7 +97,7 @@ main { display: grid; gap: 12px; }
 }
 .round.sm { width: 30px; height: 30px; }
 .round[disabled] { opacity: .3; }
-.round.orange { background: var(--orange); color: #000; }
+.round.orange { background: var(--orange); color: var(--on-accent); }
 
 /* Karty */
 .card { background: var(--card); border-radius: var(--r-card); padding: 16px; }
@@ -99,7 +134,7 @@ main { display: grid; gap: 12px; }
 }
 .meter i {
   position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 2px;
-  background: #fff; box-shadow: 0 0 0 2px var(--card);
+  background: var(--text); box-shadow: 0 0 0 2px var(--card);
   transition: left .6s cubic-bezier(.2, .8, .2, 1);
 }
 .meter i b {
@@ -161,7 +196,7 @@ main { display: grid; gap: 12px; }
 .fab {
   position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 10;
   width: 60px; height: 60px; border-radius: 50%; border: 0; padding: 0;
-  display: grid; place-items: center; background: var(--orange); color: #000;
+  display: grid; place-items: center; background: var(--orange); color: var(--on-accent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 .fab:active { transform: translateX(-50%) scale(.95); }
@@ -172,7 +207,7 @@ main { display: grid; gap: 12px; }
   border: 0; border-radius: 14px; padding: 14px 18px; width: 100%;
   background: var(--card2); color: var(--text); font-size: 17px; font-weight: 600;
 }
-.btn.primary { background: var(--orange); color: #000; }
+.btn.primary { background: var(--orange); color: var(--on-accent); }
 .btn.big { flex-direction: column; padding: 24px 18px; border-radius: var(--r-card); }
 .btn.danger { background: rgba(255, 69, 58, 0.15); color: var(--red); }
 .btn.sm { width: auto; padding: 10px 16px; font-size: 15px; }
@@ -212,7 +247,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .ai-item .input { background: var(--card3); }
 .ai-item .grams { width: 84px; flex: none; }
 .ai-item .round { background: var(--card3); }
-.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, .3); border-top-color: #000; animation: spin 1s linear infinite; }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(127, 127, 127, .35); border-top-color: currentColor; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .water-big { text-align: center; margin: 4px 0 18px; }
@@ -235,11 +270,11 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .meal-tile:active { background: var(--card3); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip-btn { border: 0; border-radius: var(--r-pill); padding: 8px 14px; background: var(--card2); color: var(--text); font-size: 15px; }
-.chip-btn.on { background: var(--orange); color: #000; font-weight: 600; }
+.chip-btn.on { background: var(--orange); color: var(--on-accent); font-weight: 600; }
 .sticky-cta {
   position: sticky; bottom: calc(-24px - env(safe-area-inset-bottom));
   margin: 18px -16px calc(-24px - env(safe-area-inset-bottom)); padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
-  background: linear-gradient(rgba(28, 28, 30, 0), var(--card) 30%);
+  background: linear-gradient(transparent, var(--card) 30%);
 }
 .rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rcard {
@@ -295,3 +330,50 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .diet-box.ok { background: rgba(48, 209, 88, 0.12); }
 .diet-box.bad { background: rgba(255, 69, 58, 0.14); }
 .diet-box p { font-size: 13px; }
+
+/* Typ dňa, suplementy, moje jedlá, diktovanie */
+.day-pill {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; border: 0; border-radius: var(--r-pill);
+  padding: 6px 10px 6px 12px; background: var(--card2); color: var(--text); font-size: 13px;
+}
+.day-pill svg { color: var(--muted); }
+.supps .chip-btn { font-size: 14px; padding: 7px 12px; }
+.chip-btn.del { background: rgba(255, 69, 58, 0.15); color: var(--red); display: inline-flex; align-items: center; gap: 4px; }
+.chip-btn .muted { font-size: 12px; margin-left: 4px; }
+.chip-btn.on .muted { color: inherit; opacity: .7; }
+#mic.rec { background: rgba(255, 69, 58, 0.18); color: var(--red); }
+.link-btn.small { font-size: 13px; padding: 0; text-transform: none; letter-spacing: 0; }
+
+/* Skenovanie obalu */
+.scan-view { position: relative; aspect-ratio: 4 / 3; border-radius: var(--r-card); overflow: hidden; background: #000; }
+.scan-view video { width: 100%; height: 100%; object-fit: cover; }
+.scan-frame { position: absolute; left: 12%; right: 12%; top: 35%; bottom: 35%; border: 2px solid rgba(255, 255, 255, .85); border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
+.product-img { display: block; max-height: 140px; max-width: 60%; margin: 0 auto 10px; border-radius: 12px; object-fit: contain; background: #fff; }
+.add-item { align-items: flex-start; }
+.add-item > span:first-child { display: grid; gap: 2px; }
+.add-item .tag { margin-top: 0; flex: none; }
+
+/* Hodnotenie receptov */
+.rate-row { display: flex; align-items: center; gap: 12px; margin: 12px 0 10px; }
+.fav-btn.on { background: rgba(255, 55, 95, 0.18); color: var(--f); }
+.fav-btn.on svg path { fill: currentColor; }
+.stars { display: flex; gap: 2px; }
+.star { border: 0; background: none; padding: 4px; color: var(--faint); }
+.star.on { color: var(--yellow); }
+.star.on svg path { fill: currentColor; }
+.fav-dot { color: var(--f); }
+.rating { font-size: 12px; color: var(--yellow); letter-spacing: 1px; }
+
+/* Režim varenia */
+.cook-mode {
+  position: fixed; inset: 0; z-index: 40; background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column; padding: calc(16px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+}
+.cook-mode[hidden] { display: none; }
+.cm-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 15px; }
+.cm-step { flex: 1; overflow-y: auto; padding: 24px 0; }
+.cm-n { font-size: 15px; color: var(--orange); font-weight: 600; margin-bottom: 14px; }
+.cm-text { font-size: 28px; line-height: 1.35; font-weight: 500; letter-spacing: -0.01em; margin-bottom: 16px; }
+.cm-ing p { font-size: 21px; padding: 10px 0; border-bottom: 0.5px solid var(--sep); }
+.cm-ing .ing-h { font-size: 15px; color: var(--muted); border: 0; }
+.cm-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
