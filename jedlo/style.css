@@ -377,3 +377,44 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .cm-ing p { font-size: 21px; padding: 10px 0; border-bottom: 0.5px solid var(--sep); }
 .cm-ing .ing-h { font-size: 15px; color: var(--muted); border: 0; }
 .cm-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Skóre potraviny 0-10 */
+.sbadge {
+  display: inline-grid; place-items: center; flex: none; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 15px;
+  background: color-mix(in srgb, var(--sc) 22%, transparent); color: var(--sc); font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums;
+}
+.sbadge.big { width: 64px; height: 64px; border-radius: 50%; font-size: 30px; background: var(--sc); color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.product-score { display: flex; align-items: center; gap: 14px; margin: 4px 0 10px; }
+.product-score > div { display: grid; gap: 2px; }
+.product-score b { font-size: 20px; }
+.scan-meter { padding: 6px 0 0; background: none; }
+.scan-meter .meter i { top: -4px; bottom: -4px; }
+
+/* Karta skenera a prázdnych suplementov */
+.scan-card { display: flex; align-items: center; gap: 14px; width: 100%; border: 0; text-align: left; color: var(--text); }
+.scan-card .tile-main b { font-weight: 600; }
+.scan-card > svg { color: var(--faint); }
+.ico.scan { background: rgba(10, 132, 255, 0.15); color: var(--p); }
+.ico.supp { background: rgba(48, 209, 88, 0.15); font-size: 20px; }
+
+/* Suplementy */
+.supp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.supp-head .tile-label { flex: 1; }
+.supp-count { font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.supp-count.all { color: var(--green); }
+.supps .bar { margin-bottom: 12px; }
+.supp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.supp {
+  display: grid; justify-items: center; align-content: start; gap: 3px; padding: 12px 6px 10px; border: 0; border-radius: 16px;
+  background: var(--card2); color: var(--text); text-align: center; transition: transform .15s, background .2s;
+}
+.supp:active { transform: scale(.96); }
+.supp-ico { position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: var(--card3); margin-bottom: 4px; transition: background .2s; }
+.supp-ico i { position: absolute; right: -3px; bottom: -3px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; box-shadow: 0 0 0 2px var(--card2); }
+.supp-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.supp-hint { font-size: 11px; color: var(--muted); line-height: 1.25; }
+.supp.on { background: rgba(48, 209, 88, 0.14); }
+.supp.on .supp-ico { background: rgba(48, 209, 88, 0.28); animation: pop .3s ease-out; }
+.supp.on .supp-ico i { box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 14%, var(--card)); }
+@keyframes pop { 50% { transform: scale(1.15); } }
+.supp-grid.edit .supp { padding-bottom: 12px; }
