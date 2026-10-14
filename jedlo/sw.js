@@ -1,6 +1,6 @@
 // Offline cache pre appku. Pri zmene súborov zvýš verziu.
-const CACHE = 'jedlo-v16';
-const ASSETS = ['./', 'index.html', 'style.css?v=16', 'app.js?v=16', 'meniny.js?v=16', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'kucharka.bin'];
+const CACHE = 'jedlo-v17';
+const ASSETS = ['./', 'index.html', 'style.css?v=17', 'app.js?v=17', 'meniny.js?v=17', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'kucharka.bin'];
 
 self.addEventListener('install', e => {
   // cache: 'reload', aby sa nevzala staršia kópia z HTTP cache prehliadača
@@ -15,20 +15,21 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Sieť najprv (nová verzia hneď), cache ako záloha offline. Chybové odpovede sa neukladajú.
-// API volania (iná doména) neriešime.
+// Sieť najprv (nová verzia hneď), ale pri slabom signáli po 3 s ukáž uloženú verziu.
+// Chybové odpovede sa neukladajú. API volania (iná doména) neriešime.
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   const cached = () => caches.match(e.request).then(r => r || caches.match(e.request, { ignoreSearch: true }));
+  const net = fetch(e.request, { cache: 'no-cache' }).then(res => {
+    if (!res.ok) return cached().then(c => c || res);
+    const copy = res.clone();
+    caches.open(CACHE).then(c => c.put(e.request, copy));
+    return res;
+  });
+  const slow = new Promise(resolve => setTimeout(resolve, 3000)).then(cached);
   e.respondWith(
-    fetch(e.request, { cache: 'no-cache' })
-      .then(res => {
-        if (!res.ok) return cached().then(c => c || res);
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, copy));
-        return res;
-      })
+    Promise.race([net, slow.then(c => c || net)])
       .catch(() => cached().then(c => c || (e.request.mode === 'navigate' ? caches.match('index.html') : Response.error())))
   );
 });
