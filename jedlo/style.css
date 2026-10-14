@@ -123,6 +123,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Pás Nezdravo – Zdravo */
 .meter-card { display: block; width: 100%; border: 0; text-align: left; color: var(--text); padding: 30px 16px 16px; }
+.meter-card.empty .meter { opacity: .35; }
 .meter-card.busy .meter i { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .4; } }
 .meter {
