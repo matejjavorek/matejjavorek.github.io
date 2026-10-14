@@ -309,6 +309,8 @@ body:has(.sheet-bg:not([hidden])), body:has(.cook-mode:not([hidden])) { overflow
   font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); max-width: calc(100% - 32px);
 }
 .toast[hidden] { display: none; }
+.toast.has-act:not([hidden]) { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+.toast-act { border: 0; background: none; color: var(--orange); font-weight: 600; font-size: 15px; padding: 6px 2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* Prepínač a plán nákupu */
