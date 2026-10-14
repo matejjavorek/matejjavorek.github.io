@@ -819,10 +819,21 @@ function scaleLine(line, factor) {
     return `${pre}${fmtQ(x * factor, unit)}${y != null ? '-' + fmtQ(y * factor, unit) : ''}${sp}${unit}`;
   });
 }
-// Recepty z kuchárky majú suroviny na 1 porciu pripravené aj so správnou gramatikou (r.ing1).
-function recipeIng(r) {
+// Recepty z kuchárky majú suroviny na 1 až 4 porcie pripravené aj so správnou gramatikou (r.ing1, r.ingx).
+function recipeIng(r, n = 1) {
   const f = r.portions > 1 ? 1 / r.portions : 1;
-  return (r.ing1 || r.ing.map(l => scaleLine(l, f))).filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
+  const base = r.ing1 || r.ing.map(l => scaleLine(l, f));
+  const lines = n === 1 ? base : r.ingx?.[n] || base.map(l => scaleLine(l, n));
+  return lines.filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
+}
+
+// Na koľko porcií varíš (pamätá si poslednú voľbu).
+const cookN = () => Math.min(4, Math.max(1, Number(S.profile.cookPortions) || 1));
+function ingHtml(r, n) {
+  return recipeIng(r, n).map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('');
+}
+function portionSeg(n) {
+  return `<div class="seg" id="r-portions">${[1, 2, 3, 4].map(k => `<button data-rport="${k}" class="${k === n ? 'on' : ''}">${portionsLabel(k)}</button>`).join('')}</div>`;
 }
 
 function starsHtml(id, rating) {
@@ -845,7 +856,7 @@ function drawCooking() {
   $('#cook-mode').innerHTML = `
     <div class="cm-top"><span class="muted">${esc(r.title)}</span><button class="round sm" data-act="cook-close" aria-label="Zavrieť">${icon('close', 14, 2.6)}</button></div>
     ${i === -1
-      ? `<div class="cm-step"><div class="cm-n">Suroviny na 1 porciu</div><div class="cm-ing">${recipeIng(r).map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div></div>`
+      ? `<div class="cm-step"><div class="cm-n">Suroviny, ${portionsLabel(cookN())}</div><div class="cm-ing">${ingHtml(r, cookN())}</div></div>`
       : `<div class="cm-step"><div class="cm-n">Krok ${i + 1} z ${n}</div><p class="cm-text">${esc(r.steps[i])}</p>
         ${r.portions > 1 ? `<p class="small muted">Množstvá v postupe sú pre ${r.portions} ${r.portions < 5 ? 'porcie' : 'porcií'}, ber ich zo surovín vyššie.</p>` : ''}
         ${i === n - 1 && r.kcal ? `<button class="btn" data-eat="${r.id}" data-n="1" style="margin-top:18px">Hotovo, zapísať 1 porciu (${r0(r.kcal)} kcal)</button>` : ''}</div>`}
@@ -1015,16 +1026,19 @@ function openRecipe(id, back = null) {
       <div><b>${r0(r.kcal)}</b><div class="lbl">kcal</div></div>
       <div><b>${r0(r.p)} g</b><div class="lbl">bielkoviny</div></div>
       <div><b>${r0(r.c)} g</b><div class="lbl">sacharidy</div></div>
-      <div><b>${r0(r.f)} g</b><div class="lbl">tuky</div></div></div></div>` : ''}
-    <h3 class="sub-h" style="margin-top:4px">Suroviny na 1 porciu${r.portions > 1 ? ` <span>(recept bol na ${r.portions})</span>` : ''}</h3>
-    <div class="ing">${recipeIng(r).map(l => /:$/.test(l) ? `<p class="ing-h">${esc(l.slice(0, -1))}</p>` : `<p>${esc(l)}</p>`).join('')}</div>
-    <button class="btn" data-cook-mode="${r.id}" style="margin-top:14px">Variť krok po kroku</button>
+      <div><b>${r0(r.f)} g</b><div class="lbl">tuky</div></div></div>
+      <p class="small muted" style="margin-top:8px">Hodnoty na 1 porciu.</p></div>` : ''}
+    <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
+    ${portionSeg(cookN())}
+    <div class="ing" id="r-ing">${ingHtml(r, cookN())}</div>
     ${miss.length ? `<p class="miss" style="margin-top:8px">Chýba ti: ${miss.map(a => esc(chipLabel(a[0]))).join(', ')}</p>` : ''}
     ${recipeDietBox(r, back === showPlan && S.mealPlan ? dietOf(S.mealPlan.form) : profileDiet())}
     <h3 class="sub-h">Postup</h3>
+    ${r.portions > 1 ? `<p class="small muted" style="margin:-2px 0 10px">Čísla v postupe sú z pôvodného receptu na ${r.portions} ${r.portions < 5 ? 'porcie' : 'porcií'}, množstvá ber zo surovín vyššie.</p>` : ''}
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
     ${r.kcal ? `<h3 class="sub-h">Zjedol som</h3><div class="grid3">${[1, 1.5, 2].map(n =>
       `<button class="btn ${n === 1 ? 'primary' : ''}" data-eat="${r.id}" data-n="${n}">${portionsLabel(n)}</button>`).join('')}</div>` : ''}
+    <button class="btn" data-cook-mode="${r.id}" style="margin-top:10px">Variť krok po kroku</button>
     ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
       <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}`;
   $('#sheet-body').scrollTop = 0;
@@ -2331,6 +2345,13 @@ document.addEventListener('click', ev => {
     t.parentElement.querySelectorAll('.star').forEach(b => b.classList.toggle('on', Number(b.dataset.n) <= S.recipeMeta[d.rate].rating));
   }
   else if (d.cookMode) startCooking(d.cookMode);
+  else if (d.rport) {
+    S.profile.cookPortions = Number(d.rport);
+    save();
+    t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === t));
+    const r = findRecipe($('[data-cook-mode]')?.dataset.cookMode);
+    if (r) $('#r-ing').innerHTML = ingHtml(r, cookN());
+  }
   else if (d.act === 'cook-close') stopCooking();
   else if (d.act === 'cook-next') { if (cookState.i >= cookState.r.steps.length - 1) stopCooking(); else { cookState.i++; drawCooking(); } }
   else if (d.act === 'cook-prev') { cookState.i = Math.max(-1, cookState.i - 1); drawCooking(); }
