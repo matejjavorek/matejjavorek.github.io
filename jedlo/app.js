@@ -316,7 +316,7 @@ function openDayType() {
     <div class="chips">${DAY_TYPES.map(([k, l]) => `<button class="chip-btn ${d.type === k ? 'on' : ''}" data-dtype="${k}">${l}</button>`).join('')}</div>
     <p class="small muted" style="margin:10px 0 18px">Podľa typu dňa sa zmení cieľ kalórií a sacharidov.</p>
     <label class="field">Aktívne kalórie z hodiniek (nepovinné)
-      <input id="watch-kcal" type="number" inputmode="numeric" placeholder="napr. 950" value="${d.watch || ''}"></label>
+      <input id="watch-kcal" type="number" inputmode="numeric" placeholder="napr. 950" value="${Number(d.watch) || ''}"></label>
     <p class="small muted" style="margin:-4px 0 16px">Nájdeš ich v appke Huawei Health. Keď ich zadáš, majú prednosť pred typom dňa.</p>
     <button class="btn primary" data-act="daytype-save">Uložiť</button>`);
 }
@@ -458,7 +458,7 @@ function verdict(score) {
 
 // Odtlačok jedál dňa, AI hodnotenie platí, len kým sa jedlá nezmenia.
 function dayHash(date) {
-  return S.entries.filter(e => e.date === date).map(e => e.id + ':' + e.g).join('|');
+  return S.entries.filter(e => e.date === date).map(e => [e.id, e.g, e.kcal, e.p, e.score, e.name].join(':')).join('|');
 }
 
 function dayMeter(date, t, tot) {
@@ -622,8 +622,13 @@ async function refreshBook() {
   if (!pass) return;
   try {
     const data = await decryptBook(pass);
+    // Medzitým zamknutá alebo odomknutá iným kľúčom: nič neprepisuj.
+    if (storedPass() !== pass) return;
     if (!BOOK || data.version !== BOOK.version) { storeBook(data); render(); }
-  } catch { /* offline alebo bez zmeny */ }
+  } catch (err) {
+    // Zmenený kľúč: zabudni ho, nech sa ukáže karta na odomknutie.
+    if (err?.message === 'Tento kľúč nesedí.') { try { localStorage.removeItem(PASS_KEY); } catch { /* nič */ } render(); }
+  }
 }
 
 // Súkromný odkaz …/jedlo/#k=KĽÚČ odomkne kuchárku jedným ťuknutím.
@@ -631,7 +636,7 @@ async function unlockFromUrl() {
   const m = location.hash.match(/[#&]k=([^&]+)/);
   if (!m) return;
   history.replaceState(null, '', location.pathname + location.search);
-  try { await unlockBook(decodeURIComponent(m[1])); } catch (err) { toast(err.message); }
+  try { await unlockBook(decodeURIComponent(m[1])); return true; } catch (err) { toast(err.message); }
 }
 
 async function unlockFromClipboard() {
@@ -788,7 +793,7 @@ function rmeta(id) { return S.recipeMeta?.[id] || {}; }
 
 // Prepočet suroviny na 1 porciu: čísla na začiatku riadku, po „/“ a v zátvorke.
 const FRAC = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3 };
-const QTY_RX = /(^|\s\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|hrnč\w*|hrnk\w*|plát\w*|stroužk\w*|strúčik\w*|strúčk\w*|špetk\w*|štipk\w*|kous\w*|kús\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?=[\s,).]|$)(?!\s*%)/g;
+const QTY_RX = /(^|:\s*|(?:^|\s)\/\s*|\()(\d+(?:[.,]\d+)?|\d+\/\d+|[½¼¾⅓⅔])(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?(\s*)(kg|g|ml|dl|l|ks|PL|KL|lžičk\w*|lžič\w*|lžíc\w*|lyžičk\w*|lyžic\w*|hrst\w*|hrnč\w*|hrnk\w*|plát\w*|stroužk\w*|strúčik\w*|strúčk\w*|špetk\w*|štipk\w*|kous\w*|kús\w*|kus\w*|baleni\w*|balení|konzerv\w*|plechovk\w*)?(?![.,]\d)(?=[\s,).]|$)(?!\s*%)/g;
 function parseQ(x) {
   if (FRAC[x] != null) return FRAC[x];
   if (x.includes('/')) { const [a, b] = x.split('/').map(Number); return b ? a / b : NaN; }
@@ -1439,10 +1444,10 @@ function openWeight() {
       <button class="btn primary sm" id="w-save">Uložiť</button></div>
     <p class="small muted" style="margin:8px 0 14px">${curDate === todayKey() ? 'Váž sa ráno po toalete, nalačno.' : `Uloží sa k dňu ${parseDay(curDate).toLocaleDateString('sk-SK', { day: 'numeric', month: 'long' })}.`}</p>
     ${weightChart(ws)}
-    ${adv?.delta && !(S.profile.surplusAdjusted >= ws.at(-1)?.date) ? `<button class="btn" id="w-apply" style="margin-bottom:14px">Upraviť cieľ o ${adv.delta > 0 ? '+' : ''}${adv.delta} kcal</button>` : ''}
+    ${adv?.delta && !(S.profile.surplusAdjusted > dayKey(addDays(new Date(), -14))) ? `<button class="btn" id="w-apply" style="margin-bottom:14px">Upraviť cieľ o ${adv.delta > 0 ? '+' : ''}${adv.delta} kcal</button>` : ''}
     ${ws.length ? `<div class="list">${[...ws].reverse().slice(0, 12).map(w => `<div class="list-item">
       <span>${parseDay(w.date).toLocaleDateString('sk-SK', { day: 'numeric', month: 'numeric', year: 'numeric' })}</span>
-      <span class="row"><b>${w.kg.toLocaleString('sk-SK')} kg</b><button class="round sm" data-wdel="${w.date}" aria-label="Zmazať">${icon('close', 14, 2.4)}</button></span></div>`).join('')}</div>` : ''}
+      <span class="row"><b>${Number(w.kg).toLocaleString('sk-SK')} kg</b><button class="round sm" data-wdel="${esc(w.date)}" aria-label="Zmazať">${icon('close', 14, 2.4)}</button></span></div>`).join('')}</div>` : ''}
   `);
   $('#w-save').onclick = () => {
     const kg = Number(String($('#w-kg').value).replace(',', '.'));
@@ -1469,15 +1474,15 @@ function openWater() {
   openSheet('Voda', `
     <div class="water-big"><b>${liters(water)} l</b><span class="muted"> z ${liters(wt)} l</span></div>
     <div class="drinks">${DRINKS.map(([k, l, ml]) => `<button class="drink" data-drink="${ml}">${icon(k, 30, 1.6)}<b>${l}</b><span>${ml} ml</span></button>`).join('')}</div>
-    ${water && lastDrink ? `<button class="btn" data-drink="${-lastDrink}">${icon('minus', 18, 2.4)} Vrátiť posledné (${lastDrink} ml)</button>`
+    ${water && lastDrink.date === curDate && lastDrink.ml ? `<button class="btn" data-drink="${-lastDrink.ml}">${icon('minus', 18, 2.4)} Vrátiť posledné (${lastDrink.ml} ml)</button>`
       : water ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
   `);
 }
-let lastDrink = 0;
+let lastDrink = {};
 
 function addWater(ml) {
   S.water[curDate] = Math.max(0, (S.water[curDate] || 0) + ml);
-  lastDrink = ml > 0 ? ml : 0;
+  lastDrink = { date: curDate, ml: ml > 0 ? ml : 0 };
   // Panel ostane otvorený, dá sa pridať viac pohárov naraz.
   save(); render(); openWater();
   toast(ml > 0 ? `+${ml} ml · spolu ${liters(S.water[curDate])} l` : `Spolu ${liters(S.water[curDate])} l`);
@@ -1706,7 +1711,7 @@ async function openScan() {
     <div class="row"><input class="input" id="scan-code" inputmode="numeric" placeholder="alebo zadaj číslo kódu" style="flex:1">
       <button class="btn sm primary" data-act="scan-code">Hľadať</button></div>
     <button class="btn" data-act="scan-photo" style="margin-top:10px">${icon('camera', 18)}Odfotiť čiarový kód</button>
-    ${recent.length ? `<h3 class="sub-h">Naposledy</h3><div class="list">${recent.map(x => `<button class="list-item" ${String(x.code).startsWith('foto-') ? 'disabled' : `data-scan="${x.code}"`}>
+    ${recent.length ? `<h3 class="sub-h">Naposledy</h3><div class="list">${recent.map(x => `<button class="list-item" ${String(x.code).startsWith('foto-') ? 'disabled' : `data-scan="${esc(x.code)}"`}>
       <span>${esc(x.name)}</span>${scoreBadge(s10(x.score))}</button>`).join('')}</div>` : ''}`);
   try {
     await loadZxing();
@@ -1933,8 +1938,8 @@ function openAdd() {
     </div>
     ${favs.length ? `<h3 class="sub-h" style="display:flex;justify-content:space-between">Moje jedlá <button class="link-btn small" data-act="fav-edit">${favEdit ? 'Hotovo' : 'Upraviť'}</button></h3>
       <div class="chips">${favs.map(f => favEdit
-        ? `<button class="chip-btn del" data-fav-del="${f.id}">${icon('close', 12, 2.6)} ${esc(f.name)}</button>`
-        : `<button class="chip-btn" data-fav="${f.id}">${esc(f.name)} <span class="muted">${r0(f.items.reduce((s, i) => s + i.kcal, 0))}</span></button>`).join('')}</div>` : ''}
+        ? `<button class="chip-btn del" data-fav-del="${esc(f.id)}">${icon('close', 12, 2.6)} ${esc(f.name)}</button>`
+        : `<button class="chip-btn" data-fav="${esc(f.id)}">${esc(f.name)} <span class="muted">${r0(f.items.reduce((s, i) => s + i.kcal, 0))}</span></button>`).join('')}</div>` : ''}
     ${recent.length ? `<h3 class="sub-h">Znova</h3><div class="list">${recent.map(e => `<button class="list-item" data-recent="${e.id}">
       <span>${esc(e.name)}</span><span class="muted small">${r0(e.g)} g · ${r0(e.kcal)} kcal</span></button>`).join('')}</div>` : ''}
   `);
@@ -1959,7 +1964,7 @@ function openTextAI() {
     const base = $('#ai-text').value ? $('#ai-text').value + ' ' : '';
     rec.onresult = ev => { const ta = $('#ai-text'); if (ta) ta.value = base + [...ev.results].map(r => r[0].transcript).join(' '); };
     rec.onend = () => { if (activeRec === rec) activeRec = null; const m = $('#mic'); if (m) { m.classList.remove('rec'); m.lastChild.textContent = 'Hovor'; } };
-    rec.onerror = () => toast('Diktovanie nefunguje, použi mikrofón na klávesnici.');
+    rec.onerror = ev => { if (ev.error !== 'aborted' && ev.error !== 'no-speech' && activeRec === rec) toast('Diktovanie nefunguje, použi mikrofón na klávesnici.'); };
     $('#mic').classList.add('rec');
     $('#mic').lastChild.textContent = 'Počúvam…';
     rec.start();
@@ -2106,7 +2111,7 @@ function addEntries(list, src) {
     if (it.allergens?.length) e.allergens = it.allergens;
     S.entries.push(e);
   }
-  save();
+  if (!save()) { S.entries.splice(S.entries.length - list.length, list.length); return; }
   closeSheet();
   render();
   toast(`Pridané: ${list.length === 1 ? list[0].name : list.length + ' ' + plural(list.length, 'položka', 'položky', 'položiek')}`);
@@ -2134,20 +2139,21 @@ function entryForm(e) {
     <div class="seg" id="f-score">${[[3, 'Nezdravé'], [5, 'Bežné'], [8, 'Zdravé']].map(([n, l]) =>
       `<button type="button" data-fscore="${n}" class="${(e.score ? (e.score >= 7 ? 8 : e.score >= 4 ? 5 : 3) : 5) === n ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 }
-function readEntryForm(date) {
+function readEntryForm(date, base = null) {
   const n = id => Math.max(0, Number(String($(id).value).replace(',', '.')) || 0);
   const name = nodash($('#f-name').value.trim());
   if (!name) { toast('Napíš názov jedla.'); return null; }
-  if (!n('#f-kcal')) { toast('Zadaj kalórie.'); return null; }
+  if (!base && !n('#f-kcal')) { toast('Zadaj kalórie.'); return null; }
   const [h, m] = ($('#f-time').value || '12:00').split(':').map(Number);
   const ts = parseDay(date); ts.setHours(h || 0, m || 0, 0, 0);
   return { name, g: n('#f-g'), kcal: n('#f-kcal'), p: n('#f-p'), c: n('#f-c'), f: n('#f-f'),
-    score: Number($('#f-score .on')?.dataset.fscore) || 5, ts: ts.getTime() };
+    score: $('#f-score').dataset.touched || !base ? Number($('#f-score .on')?.dataset.fscore) || 5 : base.score, ts: ts.getTime() };
 }
 function bindEntryForm(base) {
   // Zmena gramov prepočíta kalórie a makrá (dajú sa potom aj prepísať).
   $('#f-score').addEventListener('click', ev => {
     const b = ev.target.closest('button'); if (!b) return;
+    $('#f-score').dataset.touched = '1';
     $('#f-score').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   });
   if (!base?.g) return;
@@ -2203,7 +2209,7 @@ function openEntry(id, again = false) {
   $('#e-del').onclick = () => deleteEntry(e);
   $('#e-fav').onclick = () => { const { id: _, ts, date, thumb, ...it } = e; addFav(e.name, [it]); closeSheet(); };
   $('#e-save').onclick = () => {
-    const it = readEntryForm(e.date);
+    const it = readEntryForm(e.date, e);
     if (!it) return;
     // Vláknina sa prepočíta podľa kalórií, ak sa zmenili.
     const fib = e.kcal ? (e.fib || 0) * (it.kcal / e.kcal) : 0;
@@ -2307,7 +2313,8 @@ let bookReady = Promise.resolve();
 function withBook(fn) {
   if (BOOK) return fn();
   if (!storedPass()) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
-  bookReady.then(() => BOOK ? fn() : toast('Kuchárku sa nepodarilo načítať. Skús znova.'));
+  bookReady.then(() => BOOK ? null : (bookReady = refreshBook()))
+    .then(() => BOOK ? fn() : toast(storedPass() ? 'Kuchárku sa nepodarilo načítať, skontroluj internet.' : 'Kľúč ku kuchárke už neplatí, vlož odkaz znova.'));
 }
 
 // ---------- Udalosti ----------
@@ -2520,13 +2527,21 @@ $('#import-input').addEventListener('change', async ev => {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.entries)) throw new Error();
     const when = data.lastBackup ? new Date(data.lastBackup).toLocaleDateString('sk-SK') : 'neznámy dátum';
-    if (!confirm(`Nahradiť všetky dáta zálohou (${when}, ${data.entries.length} záznamov)? Terajšie dáta sa prepíšu.`)) return;
+    if (!confirm(`Nahradiť všetky dáta zálohou (${when}, ${data.entries.length} ${plural(data.entries.length, 'záznam', 'záznamy', 'záznamov')})? Terajšie dáta sa prepíšu.`)) return;
     const d = defaultState();
-    // Zo zálohy berieme len bezpečné hodnoty (náhľady len ako JPEG obrázky).
+    // Zo zálohy berieme len bezpečné hodnoty (náhľady len ako JPEG obrázky, čísla ako čísla, dátumy ako dátumy).
+    const isDay = x => /^\d{4}-\d{2}-\d{2}$/.test(x);
+    data.weights = (data.weights || []).filter(w => isDay(w?.date) && Number(w.kg) > 0).map(w => ({ date: w.date, kg: Number(w.kg) }));
+    data.scans = (data.scans || []).map(x => ({ code: String(x?.code).replace(/[^\w-]/g, ''), name: String(x?.name || ''), score: Number(x?.score) || 0 }));
+    data.favs = (data.favs || []).map(f => ({ ...f, id: String(f?.id).replace(/[^\w-]/g, '') || uid(), items: Array.isArray(f?.items) ? f.items : [] }));
+    for (const [k, v] of Object.entries(data.days || {})) if (!isDay(k) || typeof v !== 'object') delete data.days[k]; else if (v.watch) v.watch = Number(v.watch) || null;
+    data.myRecipes = (data.myRecipes || []).map(r => ({ ...r, id: Number(r?.id) || 0, img: /^https:\/\//.test(r?.img || '') ? r.img : '' })).filter(r => r.id >= 100000);
     data.entries = data.entries.filter(e => e && typeof e === 'object').map(e => ({ ...e, id: String(e.id).replace(/[^\w-]/g, '') || uid(),
       score: Number(e.score) || 5, thumb: /^data:image\/jpeg;base64,[\w+/=]+$/.test(e.thumb || '') ? e.thumb : undefined }));
+    const prev = S;
     S = { ...d, ...data, profile: { ...d.profile, ...data.profile } };
-    save(); closeSheet(); render(); toast('Záloha načítaná');
+    if (!save()) { S = prev; return; }
+    closeSheet(); render(); toast('Záloha načítaná');
   } catch {
     toast('Neplatný súbor zálohy.');
   }
@@ -2558,5 +2573,5 @@ if ('serviceWorker' in navigator) {
 }
 
 render();
-bookReady = unlockFromUrl().then(refreshBook);
+bookReady = unlockFromUrl().then(done => done || refreshBook());
 if (!S.profile.age) openProfile();
