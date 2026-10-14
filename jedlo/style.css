@@ -45,17 +45,8 @@
     --f: #ff2d55;
     --fib: #af52de;
     --water: #32ade6;
-    --on-accent: #fff;
+    --on-accent: #000;
   }
-  .fab { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
-  .toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); }
-  .sheet-bg { background: rgba(0, 0, 0, .35); }
-  .miss, .link-btn { color: var(--orange-ink); }
-  .s-good, .ok-tag, .ok { color: #248a3d; }
-  .s-mid { color: #8a6100; }
-  .s-bad, .bad-tag { color: #d70015; }
-  .warn-tag, .cm-n { color: var(--orange-ink); }
-  .star.on, .rating { color: #f5a623; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
@@ -71,22 +62,24 @@ body {
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3 { line-height: 1.2; }
 button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
-button { cursor: pointer; }
+button { cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+/* Odozva na ťuknutie */
+button:not(:disabled):not(.fab):not(.supp):not(.meal-tile):active { opacity: .6; }
 button:disabled { cursor: default; }
 svg { flex: none; display: block; }
 :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 
 .shell { max-width: 560px; margin: 0 auto; padding: 12px 16px 0; }
-main { display: grid; gap: 12px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Hlavička */
 .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: 8px 0 18px; }
 .day-row { display: flex; align-items: center; gap: 8px; }
 .top h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; margin-right: 4px; }
 .date { font-size: 15px; color: var(--muted); margin-top: 2px; }
-.nd { font-size: 13px; color: var(--faint); margin-top: 2px; }
+.nd { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .avatar {
-  width: 38px; height: 38px; border-radius: 50%; border: 0; flex: none; padding: 0; margin-top: 4px;
+  width: 40px; height: 40px; border-radius: 50%; border: 0; flex: none; padding: 0; margin-top: 2px;
   display: grid; place-items: center; background: var(--card2); color: var(--text); font-weight: 600; font-size: 16px;
 }
 
@@ -95,7 +88,9 @@ main { display: grid; gap: 12px; }
   width: 40px; height: 40px; border-radius: 50%; border: 0; flex: none; padding: 0;
   display: grid; place-items: center; line-height: 0; background: var(--card2); color: var(--text);
 }
-.round.sm { width: 30px; height: 30px; }
+.round.sm { width: 30px; height: 30px; position: relative; }
+/* Väčšia plocha na ťuknutie (44 px), vzhľad ostáva. */
+.round.sm::after { content: ""; position: absolute; inset: -7px; }
 .round[disabled] { opacity: .3; }
 .round.orange { background: var(--orange); color: var(--on-accent); }
 
@@ -107,8 +102,10 @@ main { display: grid; gap: 12px; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .row { display: flex; align-items: center; gap: 10px; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.grid4 b { font-size: 19px; }
 
 /* Kalórie a makrá */
 .ring-wrap { display: flex; align-items: center; gap: 18px; }
@@ -125,7 +122,7 @@ main { display: grid; gap: 12px; }
 .summary b { color: var(--text); font-weight: 600; }
 
 /* Pás Nezdravo – Zdravo */
-.meter-card { display: block; width: 100%; border: 0; text-align: left; color: var(--text); padding: 30px 16px 14px; }
+.meter-card { display: block; width: 100%; border: 0; text-align: left; color: var(--text); padding: 30px 16px 16px; }
 .meter-card.busy .meter i { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .4; } }
 .meter {
@@ -141,7 +138,7 @@ main { display: grid; gap: 12px; }
   position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
   font-size: 13px; font-weight: 600; font-style: normal; font-variant-numeric: tabular-nums; color: var(--text);
 }
-.meter-ends { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.meter-ends { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--muted); }
 .meter-text { display: block; margin-top: 10px; font-size: 13px; color: var(--muted); }
 
 /* Voda a váha */
@@ -155,7 +152,7 @@ main { display: grid; gap: 12px; }
 .tile-val small { font-size: 13px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
 
 /* Zoznamy */
-.list { display: grid; gap: 0; }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
 .entry, .list-item {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
   padding: 11px 0; border: 0; border-bottom: 0.5px solid var(--sep); background: none; color: var(--text); border-radius: 0;
@@ -174,17 +171,17 @@ main { display: grid; gap: 12px; }
 
 /* Týždeň */
 .chart { width: 100%; height: auto; margin-bottom: 12px; }
-.trio { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); text-align: center; }
 .trio div + div { border-left: 0.5px solid var(--sep); }
 .trio b { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.trio span { font-size: 12px; color: var(--muted); }
+.trio span { font-size: 13px; color: var(--muted); }
 .tip { margin-top: 12px; padding-top: 12px; border-top: 0.5px solid var(--sep); font-size: 13px; color: var(--muted); }
 .warn { background: var(--card); border-radius: var(--r-card); padding: 16px; font-size: 15px; }
 
 /* Recepty na hlavnej stránke */
 .cook-hero {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
-  border: 0; border-radius: var(--r-card); padding: 18px 16px; background: var(--card); color: var(--text);
+  border: 0; border-radius: var(--r-card); padding: 16px; background: var(--card); color: var(--text);
 }
 .cook-hero > span { display: grid; gap: 2px; }
 .cook-hero b { font-size: 17px; font-weight: 600; }
@@ -211,6 +208,7 @@ main { display: grid; gap: 12px; }
 .btn.big { flex-direction: column; padding: 24px 18px; border-radius: var(--r-card); }
 .btn.danger { background: rgba(255, 69, 58, 0.15); color: var(--red); }
 .btn.sm { width: auto; padding: 10px 16px; font-size: 15px; }
+.row > .btn.sm { align-self: stretch; }
 .btn[disabled] { opacity: .5; }
 .input, label.field > input, label.field > select {
   display: block; width: 100%; background: var(--card2); border: 0; border-radius: var(--r-row);
@@ -221,6 +219,8 @@ label.field > input, label.field > select { margin-top: 6px; }
 .input::placeholder { color: var(--faint); }
 textarea.input { resize: vertical; min-height: 90px; }
 label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.grid2 > label.field { margin-bottom: 0; }
+.grid2:has(> label.field) { gap: 12px 10px; margin-bottom: 12px; }
 .sub-h { margin: 24px 0 8px; font-size: 13px; font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em; }
 .empty { color: var(--muted); font-size: 15px; padding: 14px; border-radius: var(--r-row); background: var(--card2); }
 
@@ -231,9 +231,14 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 }
 .sheet-bg[hidden] { display: none; }
 .sheet {
-  background: var(--card); color: var(--text); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
-  border-radius: 14px 14px 0 0; padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+  background: var(--card); color: var(--text); width: 100%; max-width: 560px; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  border-radius: var(--r-card) var(--r-card) 0 0; padding: 8px 16px calc(24px + env(safe-area-inset-bottom) + var(--kb, 0px));
 }
+/* Úchytka ako na iPhone */
+.sheet::before { content: ""; display: block; width: 36px; height: 5px; border-radius: 3px; background: var(--card3); margin: 0 auto 10px; }
+/* Pod otvoreným panelom sa stránka neposúva */
+body:has(.sheet-bg:not([hidden])), body:has(.cook-mode:not([hidden])) { overflow: hidden; }
 .sheet .card, .sheet .ai-item { background: var(--card2); }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 16px; }
 .sheet-head h2 { flex: 1; font-size: 20px; font-weight: 600; }
@@ -252,7 +257,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 
 .water-big { text-align: center; margin: 4px 0 18px; }
 .water-big b { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; }
-.drinks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.drinks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 .drink {
   border: 0; border-radius: var(--r-card); padding: 16px 10px; background: var(--card2); color: var(--text);
   display: grid; justify-items: center; gap: 2px; text-align: center; font-weight: 600;
@@ -261,7 +266,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .drink span { font-size: 13px; color: var(--muted); font-weight: 400; }
 
 /* Sprievodca receptami */
-.meal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.meal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .meal-tile {
   border: 0; border-radius: var(--r-card); padding: 24px 10px; background: var(--card2); color: var(--text);
   display: grid; justify-items: center; gap: 8px; font-size: 17px; font-weight: 600;
@@ -276,7 +281,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
   margin: 18px -16px calc(-24px - env(safe-area-inset-bottom)); padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
   background: linear-gradient(transparent, var(--card) 30%);
 }
-.rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .rcard {
   border: 0; padding: 0; border-radius: 14px; background: var(--card2); color: var(--text); text-align: left;
   display: grid; grid-template-rows: auto 1fr; overflow: hidden;
@@ -290,6 +295,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .photo.big { border-radius: var(--r-card); aspect-ratio: 3 / 2; }
 .rinfo { display: grid; gap: 2px; padding: 10px 12px 12px; align-content: start; }
 .rinfo b { font-size: 15px; font-weight: 600; line-height: 1.25; }
+.rinfo .small { overflow-wrap: normal; }
 .ok, .miss { font-size: 13px; margin-top: 2px; }
 .ok { color: var(--green); }
 .miss { color: var(--orange); }
@@ -307,7 +313,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 
 /* Prepínač a plán nákupu */
 .seg { display: flex; background: var(--card2); border-radius: 10px; padding: 2px; gap: 2px; margin: 4px 0 4px; }
-.seg button { flex: 1; border: 0; background: none; padding: 7px 4px; border-radius: 8px; font-size: 14px; color: var(--text); }
+.seg button { flex: 1; border: 0; background: none; padding: 9px 4px; border-radius: 8px; font-size: 15px; color: var(--text); }
 .seg button.on { background: var(--card3); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
 .sub-h span { text-transform: none; }
 .ai-sum b.good { color: var(--green); }
@@ -328,7 +334,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .ok-tag { background: rgba(48, 209, 88, 0.18); color: var(--green); }
 .warn-tag { background: rgba(255, 159, 10, 0.18); color: var(--orange); }
 .bad-tag { background: rgba(255, 69, 58, 0.18); color: var(--red); }
-.diet-box { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-row); background: rgba(255, 159, 10, 0.12); font-size: 14px; display: grid; gap: 6px; }
+.diet-box { margin-top: 12px; padding: 12px 14px; border-radius: var(--r-row); background: rgba(255, 159, 10, 0.12); font-size: 15px; display: grid; gap: 6px; }
 .diet-box.ok { background: rgba(48, 209, 88, 0.12); }
 .diet-box.bad { background: rgba(255, 69, 58, 0.14); }
 .diet-box p { font-size: 13px; }
@@ -336,10 +342,9 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 /* Typ dňa, suplementy, moje jedlá, diktovanie */
 .day-pill {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; border: 0; border-radius: var(--r-pill);
-  padding: 6px 10px 6px 12px; background: var(--card2); color: var(--text); font-size: 13px;
+  min-height: 34px; padding: 7px 12px 7px 14px; background: var(--card2); color: var(--text); font-size: 14px;
 }
 .day-pill svg { color: var(--muted); }
-.supps .chip-btn { font-size: 14px; padding: 7px 12px; }
 .chip-btn.del { background: rgba(255, 69, 58, 0.15); color: var(--red); display: inline-flex; align-items: center; gap: 4px; }
 .chip-btn .muted { font-size: 12px; margin-left: 4px; }
 .chip-btn.on .muted { color: inherit; opacity: .7; }
@@ -349,6 +354,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 /* Skenovanie obalu */
 .scan-view { position: relative; aspect-ratio: 4 / 3; border-radius: var(--r-card); overflow: hidden; background: #000; }
 .scan-view video { width: 100%; height: 100%; object-fit: cover; }
+.scan-view .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; border-radius: 0; background: var(--card2); }
 .scan-frame { position: absolute; left: 12%; right: 12%; top: 35%; bottom: 35%; border: 2px solid rgba(255, 255, 255, .85); border-radius: 10px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
 .product-img { display: block; max-height: 140px; max-width: 60%; margin: 0 auto 10px; border-radius: 12px; object-fit: contain; background: #fff; }
 .add-item { align-items: flex-start; }
@@ -360,7 +366,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .fav-btn.on { background: rgba(255, 55, 95, 0.18); color: var(--f); }
 .fav-btn.on svg path { fill: currentColor; }
 .stars { display: flex; gap: 2px; }
-.star { border: 0; background: none; padding: 4px; color: var(--faint); }
+.star { border: 0; background: none; padding: 10px 6px; color: var(--faint); }
 .star.on { color: var(--yellow); }
 .star.on svg path { fill: currentColor; }
 .fav-dot { color: var(--f); }
@@ -378,7 +384,7 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .cm-text { font-size: 28px; line-height: 1.35; font-weight: 500; letter-spacing: -0.01em; margin-bottom: 16px; }
 .cm-ing p { font-size: 21px; padding: 10px 0; border-bottom: 0.5px solid var(--sep); }
 .cm-ing .ing-h { font-size: 15px; color: var(--muted); border: 0; }
-.cm-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cm-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 
 /* Skóre potraviny 0-10 */
 .sbadge {
@@ -405,7 +411,8 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .supp-count { font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .supp-count.all { color: var(--green); }
 .supps .bar { margin-bottom: 12px; }
-.supp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.supp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.supp-grid.edit { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .supp {
   display: grid; justify-items: center; align-content: start; gap: 3px; padding: 12px 6px 10px; border: 0; border-radius: 16px;
   background: var(--card2); color: var(--text); text-align: center; transition: transform .15s, background .2s;
@@ -420,3 +427,20 @@ label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(-
 .supp.on .supp-ico i { box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 14%, var(--card)); }
 @keyframes pop { 50% { transform: scale(1.15); } }
 .supp-grid.edit .supp { padding-bottom: 12px; }
+
+/* Svetlý režim: tieto pravidlá musia byť až na konci, inak ich prebijú tmavé hodnoty vyššie. */
+@media (prefers-color-scheme: light) {
+  .fab { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+  .toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); }
+  .sheet-bg { background: rgba(0, 0, 0, .35); }
+  .miss, .link-btn { color: var(--orange-ink); }
+  .s-good, .ok-tag, .ok { color: #248a3d; }
+  .s-mid { color: #8a6100; }
+  .s-bad, .bad-tag { color: #d70015; }
+  .warn-tag, .cm-n { color: var(--orange-ink); }
+  .star.on, .rating { color: #f5a623; }
+  .seg button.on { background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04); }
+  .input::placeholder { color: rgba(60, 60, 67, .45); }
+  .s-mid { background: rgba(255, 204, 0, 0.22); }
+  .sbadge { color: color-mix(in srgb, var(--sc) 70%, #000); }
+}
