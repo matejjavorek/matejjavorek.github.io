@@ -976,6 +976,16 @@ function ingHtml(r, n) {
   const head = l => /:$/.test(l) || (!/\d|[½¼¾,]/.test(l) && l.split(/\s+/).length <= 3 && /vrstv|cesto|plnk|omáčk|polev|krém|posýpk|dresing|marinád|zdobeni|príloh|základ/i.test(l));
   return recipeIng(r, n).map(l => head(l) ? `<p class="ing-h">${esc(l.replace(/:$/, ''))}</p>` : `<p>${esc(l)}</p>`).join('');
 }
+// Kalórie a makrá pre zvolený počet porcií (1 porcia × n).
+function macroHtml(r, n) {
+  return `<div class="grid4">
+      <div><b>${r0(r.kcal * n)}</b><div class="lbl">kcal</div></div>
+      <div><b>${r0(r.p * n)} g</b><div class="lbl">bielkoviny</div></div>
+      <div><b>${r0(r.c * n)} g</b><div class="lbl">sacharidy</div></div>
+      <div><b>${r0(r.f * n)} g</b><div class="lbl">tuky</div></div></div>
+      <p class="small muted" style="margin-top:8px">${n === 1 ? 'Hodnoty na 1 porciu.' : `Spolu na ${portionsLabel(n)}, 1 porcia má ${r0(r.kcal)} kcal.`}</p>`;
+}
+
 function portionSeg(n) {
   return `<div class="seg" id="r-portions">${[1, 2, 3, 4].map(k => `<button data-rport="${k}" class="${k === n ? 'on' : ''}">${portionsLabel(k)}</button>`).join('')}</div>`;
 }
@@ -1194,12 +1204,7 @@ function openRecipe(id, back = null, eatN = 1) {
     <div class="rate-row"><button class="round fav-btn ${m.fav ? 'on' : ''}" data-rfav="${r.id}" aria-label="Obľúbený">${icon('heart', 20, 2)}</button>${starsHtml(r.id, m.rating)}</div>
     <input class="input" id="r-note" placeholder="Moja poznámka" value="${esc(m.note || '')}" style="margin-bottom:10px">
     ${meta ? `<p class="small muted" style="margin:0 0 12px">${esc(meta)}</p>` : ''}
-    ${r.kcal ? `<div class="ai-sum"><div class="grid4">
-      <div><b>${r0(r.kcal)}</b><div class="lbl">kcal</div></div>
-      <div><b>${r0(r.p)} g</b><div class="lbl">bielkoviny</div></div>
-      <div><b>${r0(r.c)} g</b><div class="lbl">sacharidy</div></div>
-      <div><b>${r0(r.f)} g</b><div class="lbl">tuky</div></div></div>
-      <p class="small muted" style="margin-top:8px">Hodnoty na 1 porciu.</p></div>` : ''}
+    ${r.kcal ? `<div class="ai-sum" id="r-macros">${macroHtml(r, cookN())}</div>` : ''}
     <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
     ${portionSeg(cookN())}
     <div class="ing" id="r-ing">${ingHtml(r, cookN())}</div>
@@ -2624,7 +2629,10 @@ document.addEventListener('click', ev => {
     save();
     t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === t));
     const r = findRecipe($('[data-cook-mode]')?.dataset.cookMode);
-    if (r) $('#r-ing').innerHTML = ingHtml(r, cookN());
+    if (r) {
+      $('#r-ing').innerHTML = ingHtml(r, cookN());
+      if ($('#r-macros')) $('#r-macros').innerHTML = macroHtml(r, cookN());
+    }
   }
   else if (d.act === 'cook-close') stopCooking();
   else if (d.act === 'cook-next') { if (cookState.i >= cookState.r.steps.length - 1) stopCooking(); else { cookState.i++; drawCooking(); } }
