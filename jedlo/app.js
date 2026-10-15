@@ -92,7 +92,7 @@ function normalize(raw) {
       kcal: pos(r.kcal), p: pos(r.p), c: pos(r.c), f: pos(r.f), fib: pos(r.fib), ing: strs(r.ing), steps: strs(r.steps),
       req: arr(r.req).map(a => strs(a).map(x => x.replace(/[^\w-]/g, ''))),
       ...(r.ingx ? { ingx: Object.fromEntries(Object.entries(obj(r.ingx)).filter(([k]) => /^[2-4]$/.test(k)).map(([k, v]) => [k, strs(v)])) } : {}),
-      img: /^https:\/\//.test(r.img || '') ? str(r.img, 500) : '', photo: /^https:\/\//.test(r.img || ''),
+      img: /^https:\/\//.test(r.img || '') ? str(r.img, 500) : /^data:image\/jpeg;base64,[\w+/=]+$/.test(r.img || '') ? r.img : '', photo: /^(https:|data:image\/jpeg)/.test(r.img || ''),
     })),
     prices: arr(s.prices).map(obj).filter(x => pos(x.price) > 0).map(x => ({ store: str(x.store, 20), name: str(x.name, 80), amount: str(x.amount, 30), price: pos(x.price), date: isDay(x.date) ? x.date : '' })),
     scans: arr(s.scans).map(obj).map(x => ({ code: idOf(x.code), name: str(x.name, 120), score: Math.min(100, pos(x.score)) })),
@@ -1034,30 +1034,52 @@ const MYRECIPE_SCHEMA = {
   required: ['title', 'cat', 'time', 'ing', 'ing2', 'ing3', 'ing4', 'steps', 'kcal', 'p', 'c', 'f', 'fib', 'tags', 'image_url'],
   additionalProperties: false,
 };
-function openAddRecipe() {
+// Fotka vlastného jedla pre recept: { base64 na AI, small na uloženie }.
+let recipePhoto = null, recipeDraft = '';
+async function shrinkDataUrl(dataUrl, max) {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  return resize(img, max, 0.72);
+}
+
+// Z výsledku AI (fotka jedla) rovno do formulára receptu, stačí doplniť postup.
+async function aiToRecipe(photo, draft) {
+  recipePhoto = photo ? { base64: photo.base64, small: await shrinkDataUrl(photo.dataUrl, 640) } : null;
+  openAddRecipe(draft + '\n\nPostup: ');
+  $('#rec-text').focus();
+}
+
+function openAddRecipe(prefill = '') {
   openSheet('', '');
-  wizHead('Recept z internetu', openAllRecipes);
+  wizHead('Pridať recept', openAllRecipes);
   $('#sheet-body').innerHTML = `
-    <input class="input" id="rec-url" type="url" inputmode="url" placeholder="Vlož odkaz na recept (https://…)">
-    <p class="small muted" style="margin:8px 0 12px">Alebo sem vlož text receptu (keď stránka nejde otvoriť):</p>
-    <textarea class="input" id="rec-text" placeholder="Názov, suroviny a postup…"></textarea>
-    <button class="btn primary" id="rec-go" style="margin-top:12px">Pridať recept</button>
-    <p class="small muted" style="margin-top:10px">AI ho preloží do slovenčiny, prepočíta na 1 porciu a doplní makrá. Recept ostane len v tvojom mobile.</p>`;
+    ${recipePhoto ? `<img class="preview" src="${recipePhoto.small}" alt="Fotka jedla">` : ''}
+    <button class="btn" data-act="recipe-photo" style="margin-bottom:10px">${icon('camera', 18)}${recipePhoto ? 'Iná fotka' : 'Odfotiť, čo som uvaril'}</button>
+    <textarea class="input" id="rec-text" placeholder="Čo si uvaril a ako: suroviny, množstvá, postup. Alebo vlož text receptu.">${esc(prefill)}</textarea>
+    <input class="input" id="rec-url" type="url" inputmode="url" placeholder="alebo odkaz na recept (https://…)" style="margin-top:10px">
+    <button class="btn primary" id="rec-go" style="margin-top:12px">Pridať do receptára</button>
+    <p class="small muted" style="margin-top:10px">AI z fotky, popisu alebo odkazu spraví recept po slovensky, na 1 porciu, s makrami a postupom. Ostane len v tvojom mobile.</p>`;
   $('#rec-go').onclick = () => importRecipe($('#rec-go'));
 }
 async function importRecipe(btn) {
   const url = $('#rec-url').value.trim(), text = $('#rec-text').value.trim();
-  if (!url && !text) return toast('Vlož odkaz alebo text receptu.');
+  const photo = recipePhoto;
+  if (!url && !text && !photo) return toast('Odfoť jedlo, napíš ako si ho robil, alebo vlož odkaz.');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Spracúvam recept…';
   const model = S.profile.model || MODELS[0][0];
   const chips = (BOOK?.chips || []).map(c => `${c.id} (${c.label})`).join(', ');
   try {
     const r = await callClaude({
-      system: `Z receptu sprav recept do appky. Všetko po slovensky. Suroviny a makrá prepočítaj na 1 porciu pre jedného športovca (jedno jedlo). ing: jedna surovina na riadok s množstvom. ing2, ing3, ing4: tie isté riadky (rovnaký počet) pre 2, 3 a 4 porcie, so správnym tvarom slov (2 vajcia, 5 vajec, 2 lyžice). steps: kroky bez číslovania.
+      system: `Z receptu sprav recept do appky. Všetko po slovensky. Ak je priložená fotka, je to jedlo, ktoré používateľ sám uvaril: podľa fotky a jeho popisu urč suroviny, rozumné množstvá a postup (popis používateľa má prednosť, nič si nevymýšľaj nad rámec toho, čo vidno alebo napísal). Suroviny a makrá prepočítaj na 1 porciu pre jedného športovca (jedno jedlo). ing: jedna surovina na riadok s množstvom. ing2, ing3, ing4: tie isté riadky (rovnaký počet) pre 2, 3 a 4 porcie, so správnym tvarom slov (2 vajcia, 5 vajec, 2 lyžice). steps: kroky bez číslovania.
 cat: snidane (raňajky), svaciny (desiata/snack), hlavni (obed/večera), predzapas (pred zápasom), dezerty. time: minúty spolu. kcal, p, c, f, fib: na 1 porciu.
 tags: id hlavných surovín iba z tohto zoznamu: ${chips}. image_url: odkaz na hlavnú fotku jedla zo stránky, inak prázdny reťazec. Nepoužívaj dlhé pomlčky, namiesto nich píš čiarky.`,
-      content: [{ type: 'text', text: url ? `Odkaz na recept: ${url}\n${text ? 'Doplňujúci text:\n' + text : 'Otvor stránku a recept z nej vytiahni.'}` : `Text receptu:\n${text}` }],
+      content: [
+        ...(photo ? [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photo.base64 } }] : []),
+        { type: 'text', text: url ? `Odkaz na recept: ${url}\n${text ? 'Doplňujúci text:\n' + text : 'Otvor stránku a recept z nej vytiahni.'}`
+          : photo ? `Moje jedlo na fotke.${text ? ' Ako som ho robil:\n' + text : ''}` : `Text receptu:\n${text}` },
+      ],
       schema: MYRECIPE_SCHEMA,
       effort: 'medium',
       maxTokens: 12000,
@@ -1068,10 +1090,11 @@ tags: id hlavných surovín iba z tohto zoznamu: ${chips}. image_url: odkaz na h
     S.myRecipes.push({ id, mine: true, source: url, title: r.title, cat: r.cat, time: r.time, portions: 1, prep: false,
       kcal: Math.max(0, +r.kcal || 0), p: Math.max(0, +r.p || 0), c: Math.max(0, +r.c || 0), f: Math.max(0, +r.f || 0), fib: Math.max(0, +r.fib || 0), ing: r.ing, steps: r.steps,
       ingx: [2, 3, 4].every(n => r[`ing${n}`]?.length === r.ing.length) ? { 2: r.ing2, 3: r.ing3, 4: r.ing4 } : undefined, req: (r.tags || []).filter(t => BOOK?.chips.some(c => c.id === t)).map(t => [t]),
-      img: /^https:\/\//.test(r.image_url) ? r.image_url : '', photo: /^https:\/\//.test(r.image_url) });
-    save();
+      img: photo ? photo.small : /^https:\/\//.test(r.image_url) ? r.image_url : '', photo: !!photo || /^https:\/\//.test(r.image_url) });
+    if (!save()) { S.myRecipes.pop(); throw new Error('Recept sa nezmestil do úložiska.'); }
+    recipePhoto = null;
     render();
-    toast('Recept pridaný');
+    toast('Recept pridaný do receptára');
     if (btn.isConnected) openRecipe(id, openAllRecipes);
   } catch (err) {
     btn.disabled = false;
@@ -1509,7 +1532,7 @@ function openAllRecipes() {
   wizHead('Všetky recepty', null);
   const cats = BOOK.cats.filter(c => allRecipes().some(r => r.cat === c.id));
   $('#sheet-body').innerHTML = `
-    <button class="btn" data-act="add-recipe" style="margin-bottom:10px">${icon('link', 18)}Pridať recept z internetu</button>
+    <button class="btn" data-act="add-recipe" style="margin-bottom:10px">${icon('plus', 18)}Pridať vlastný recept</button>
     <input class="input" id="recipe-q" type="search" placeholder="Hľadať (napr. kuracie, kaša, losos)" autocomplete="off" value="${esc(recQ)}">
     <div class="chips" style="margin-top:10px"><button class="chip-btn ${onlyFav ? 'on' : ''}" data-act="only-fav">♥ Len obľúbené</button></div>
     <div id="recipe-results" style="margin-top:6px"></div>`;
@@ -1689,7 +1712,13 @@ const AI_SCHEMA = {
   additionalProperties: false,
 };
 
-const AI_SYSTEM = `Si skúsený výživový analytik. Z fotky a/alebo popisu identifikuj každú samostatnú zložku jedla.
+const AI_SYSTEM = `Si skúsený výživový analytik a nutričný terapeut. Z fotky a/alebo popisu identifikuj každú samostatnú zložku jedla.
+Postup (premysli si ho, vypisuj len výsledok):
+1. Pomenuj každú zložku a spôsob prípravy (varené, pečené, vyprážané, surové, s omáčkou).
+2. Odhadni objem a hmotnosť podľa mierky na fotke (tanier, príbor, ruka, pohár, balenie).
+3. Vypočítaj hodnoty z bežných nutričných tabuliek (slovenské a české tabuľky, USDA) pre daný stav (varené vs. suché).
+4. Pripočítaj skryté kalórie: olej, maslo, omáčky, dresingy, syr navrch, obaľovanie, cukor v nápojoch.
+5. Skontroluj, že kcal ≈ 4 × bielkoviny + 4 × sacharidy + 9 × tuky; ak nie, oprav.
 - Odhadni hmotnosť každej zložky v gramoch podľa veľkosti porcie (bežný tanier má ~26 cm, použi príbor a ruky ako mierku).
 - Nutričné hodnoty uveď pre CELÚ odhadnutú porciu danej zložky, nie na 100 g.
 - Ak používateľ uvedie čo to je, gramáž, značku alebo spôsob prípravy, má to prednosť pred odhadom. Počítaj aj s olejom/maslom pri príprave.
@@ -1755,6 +1784,22 @@ async function callClaude({ system, content, schema, effort = 'medium', maxToken
   return out;
 }
 
+// Čo používateľ bežne je (posledných 30 dní) a jeho recepty: AI podľa toho odhaduje jeho porcie presnejšie.
+function foodContext() {
+  const from = dayKey(addDays(new Date(), -30));
+  const seen = new Map();
+  for (const e of S.entries) if (e.date >= from && e.kcal) {
+    const k = norm(e.name), x = seen.get(k) || { e, n: 0 };
+    x.n++; seen.set(k, x);
+  }
+  const usual = [...seen.values()].sort((a, b) => b.n - a.n).slice(0, 20)
+    .map(({ e, n }) => `${e.name}${e.g ? ` ${r0(e.g)} g` : ''}: ${r0(e.kcal)} kcal, B ${r0(e.p)} g (${n}×)`);
+  const mine = (S.myRecipes || []).slice(-25).map(r => `${r.title}: ${r0(r.kcal)} kcal, B ${r0(r.p)} g, S ${r0(r.c)} g, T ${r0(r.f)} g na porciu`);
+  return (usual.length ? `\nČo bežne jem (moje porcie):\n${usual.join('\n')}` : '') +
+    (mine.length ? `\nMoje vlastné recepty:\n${mine.join('\n')}` : '') +
+    (usual.length || mine.length ? '\nAk jedlo zodpovedá niečomu z týchto zoznamov, vychádzaj z týchto gramáží a hodnôt.' : '');
+}
+
 async function analyzeFood({ image, text }) {
   const t = targets(curDate);
   const goal = Number(S.profile.surplus) > 0 ? 'priberať svalovú hmotu' : 'udržať váhu';
@@ -1764,9 +1809,10 @@ async function analyzeFood({ image, text }) {
     type: 'text',
     text: `Cieľ používateľa: ${goal}${t ? ` (${t.kcal} kcal, ${t.p} g bielkovín denne)` : ''}.\n` +
       (dietActive(profileDiet()) ? `Strava používateľa: ${dietSummary(profileDiet())}. Pri lepku a alergénoch buď opatrný a v note upozorni, ak jedlo pre neho nie je vhodné.\n` : '') +
-      (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.'),
+      (text ? `Používateľ k tomu píše: ${text}` : 'Analyzuj jedlo na fotke.') + foodContext(),
   });
-  return callClaude({ system: AI_SYSTEM, content, schema: AI_SCHEMA });
+  // Vyšší effort = dôkladnejšie premyslený odhad gramáže a kalórií.
+  return callClaude({ system: AI_SYSTEM, content, schema: AI_SCHEMA, effort: 'high', maxTokens: 16000 });
 }
 
 function loadImage(file) {
@@ -2211,10 +2257,11 @@ function photoDietBox(items) {
     ${al.length ? `<p>Alergény: ${al.map(([n, a]) => `${esc(n)} (${ALLERGENS.find(x => x[0] === a)?.[1] || a})`).join(', ')}</p>` : ''}</div>`;
 }
 
-let saveAsFav = false, asOne = true;
+let saveAsFav = false, asOne = true, toRecipe = false;
 function showAIResult(res) {
   saveAsFav = false;
   asOne = true;
+  toRecipe = false;
   // Rozumné hranice: nič záporné, žiadne nezmyselne veľké čísla.
   const num = (x, max = 10000) => Math.min(max, Math.max(0, Number(x) || 0));
   const items = (Array.isArray(res.items) ? res.items : []).map(it => {
@@ -2260,7 +2307,8 @@ function showAIResult(res) {
       }).join('')}
       <p class="small muted" style="margin:4px 0 12px">Ak gramy nesedia, prepíš ich, hodnoty sa prepočítajú.</p>
       ${items.length > 1 ? `<button class="chip-btn ${asOne ? 'on' : ''}" id="ai-one" style="margin:0 6px 12px 0">${asOne ? '✓ ' : ''}Uložiť ako jedno jedlo</button>` : ''}
-      ${items.length ? `<button class="chip-btn ${saveAsFav ? 'on' : ''}" id="ai-fav" style="margin-bottom:12px">${saveAsFav ? '✓ ' : ''}Pridať aj medzi moje jedlá</button>
+      ${items.length ? `<button class="chip-btn ${saveAsFav ? 'on' : ''}" id="ai-fav" style="margin:0 6px 12px 0">${saveAsFav ? '✓ ' : ''}Pridať aj medzi moje jedlá</button>
+        <button class="chip-btn ${toRecipe ? 'on' : ''}" id="ai-recipe" style="margin-bottom:12px">${toRecipe ? '✓ ' : ''}Uvaril som to, pridať do receptára</button>
         <button class="btn primary" id="ai-save">Uložiť</button>` : '<div class="empty">AI nenašla žiadne jedlo.</div>'}
     `);
     document.querySelectorAll('[data-ai-g]').forEach(inp => inp.addEventListener('input', () => {
@@ -2279,6 +2327,8 @@ function showAIResult(res) {
     const favBtn = $('#ai-fav');
     if (favBtn) favBtn.onclick = () => { saveAsFav = !saveAsFav; draw(); };
     $('#ai-meal')?.addEventListener('input', ev => { res.meal_name = ev.target.value; });
+    const recBtn = $('#ai-recipe');
+    if (recBtn) recBtn.onclick = () => { toRecipe = !toRecipe; draw(); };
     const oneBtn = $('#ai-one');
     if (oneBtn) oneBtn.onclick = () => { asOne = !asOne; draw(); };
     const saveBtn = $('#ai-save');
@@ -2291,7 +2341,11 @@ function showAIResult(res) {
       if (!out.length) return toast('Zadaj aspoň jednu položku s gramami.');
       const mealName = nodash($('#ai-meal')?.value.trim() || res.meal_name) || out[0]?.name || 'Moje jedlo';
       if (saveAsFav) addFav(mealName, out);
+      // Pre recept si odlož fotku a zloženie (zatvorenie panela fotku zahodí).
+      const photo = toRecipe ? pendingPhoto : null;
+      const draft = [mealName, ...out.map(it => `${it.name} ${r0(it.g)} g`), res.description || ''].filter(Boolean).join('\n');
       addEntries(asOne ? [combineItems(mealName, out)] : out, thumb ? 'foto' : 'text');
+      if (toRecipe) aiToRecipe(photo, draft);
     };
   };
   draw();
@@ -2575,7 +2629,8 @@ document.addEventListener('click', ev => {
   else if (d.act === 'cook-close') stopCooking();
   else if (d.act === 'cook-next') { if (cookState.i >= cookState.r.steps.length - 1) stopCooking(); else { cookState.i++; drawCooking(); } }
   else if (d.act === 'cook-prev') { cookState.i = Math.max(-1, cookState.i - 1); drawCooking(); }
-  else if (d.act === 'add-recipe') openAddRecipe();
+  else if (d.act === 'add-recipe') { recipePhoto = null; openAddRecipe(); }
+  else if (d.act === 'recipe-photo') { recipeDraft = $('#rec-text')?.value || ''; pickPhoto('recipe'); }
   else if (d.act === 'recipe-del') {
     if (!confirm('Zmazať tento recept?')) return;
     S.myRecipes = (S.myRecipes || []).filter(r => r.id !== Number(d.id));
@@ -2716,6 +2771,14 @@ $('#photo-input').addEventListener('change', async ev => {
   ev.target.value = '';
   if (!file) return;
   if (photoMode === 'barcode') return scanFromPhoto(file);
+  if (photoMode === 'recipe') {
+    try {
+      const img = await loadImage(file);
+      recipePhoto = { base64: resize(img, 1568, 0.85).split(',')[1], small: resize(img, 640, 0.72) };
+      openAddRecipe(recipeDraft);
+    } catch (err) { toast(err.message); }
+    return;
+  }
   if (photoMode === 'label' || photoMode === 'receipt') {
     try {
       const img = await loadImage(file);
@@ -2729,7 +2792,8 @@ $('#photo-input').addEventListener('change', async ev => {
   }
   try {
     const img = await loadImage(file);
-    const dataUrl = resize(img, 1024, 0.8);
+    // Väčšia fotka = AI lepšie rozozná suroviny a porcie.
+    const dataUrl = resize(img, 1568, 0.85);
     pendingPhoto = { dataUrl, base64: dataUrl.split(',')[1], thumb: thumbOf(img) };
     openPhotoReview();
   } catch (err) {
