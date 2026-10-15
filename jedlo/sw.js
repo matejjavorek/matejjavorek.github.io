@@ -24,7 +24,7 @@ self.addEventListener('fetch', e => {
   const net = fetch(e.request, { cache: 'no-cache' }).then(res => {
     if (!res.ok) return cached().then(c => c || res);
     const copy = res.clone();
-    caches.open(CACHE).then(c => c.put(e.request, copy));
+    e.waitUntil(caches.open(CACHE).then(c => c.put(e.request, copy)));
     return res;
   });
   const slow = new Promise(resolve => setTimeout(resolve, 3000)).then(cached);

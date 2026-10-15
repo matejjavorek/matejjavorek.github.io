@@ -281,7 +281,7 @@ function dayTotals(date) {
   const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, scoreW: 0, n: 0 };
   for (const e of S.entries) {
     if (e.date !== date) continue;
-    t.kcal += e.kcal; t.p += e.p; t.c += e.c; t.f += e.f; t.fib += e.fib || 0;
+    t.kcal += e.kcal || 0; t.p += e.p || 0; t.c += e.c || 0; t.f += e.f || 0; t.fib += e.fib || 0;
     t.scoreW += (e.score || 5) * e.kcal; t.n++;
   }
   t.score = t.kcal ? t.scoreW / t.kcal : null;
@@ -526,7 +526,7 @@ function copyDayToToday() {
   if (already && !confirm('Niektoré z týchto jedál už dnes máš. Skopírovať aj tak?')) return;
   const added = items.map(e => { const { id, thumb, ...rest } = e; return { ...rest, id: uid(), date: today, ts: tsOn(today, new Date(e.ts)) }; });
   S.entries.push(...added);
-  save();
+  if (!save()) { S.entries.splice(S.entries.length - added.length, added.length); return; }
   curDate = today;
   render();
   const ids = new Set(added.map(e => e.id));
@@ -571,7 +571,7 @@ function dayScore(date, t, tot) {
     protein: Math.min(1, pShare / pTarget),
     fiber: Math.min(1, (tot.fib / tot.kcal) * 1000 / 14),
   };
-  const score = Math.round(100 * (0.6 * parts.quality + 0.25 * parts.protein + 0.15 * parts.fiber));
+  const score = Math.max(0, Math.min(100, Math.round(100 * (0.6 * parts.quality + 0.25 * parts.protein + 0.15 * parts.fiber)) || 0));
   const tips = {
     quality: 'veľa spracovaného jedla',
     protein: 'málo bielkovín v jedle',
@@ -965,7 +965,7 @@ function scaleLine(line, factor) {
 function recipeIng(r, n = 1) {
   const f = r.portions > 1 ? 1 / r.portions : 1;
   const base = r.ing1 || r.ing.map(l => scaleLine(l, f));
-  const lines = n === 1 ? base : r.ingx?.[n] || base.map(l => scaleLine(l, n));
+  const lines = n === 1 ? base : r.ingx?.[n]?.length === base.length ? r.ingx[n] : base.map(l => scaleLine(l, n));
   return lines.filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
 }
 
@@ -1096,7 +1096,7 @@ tags: id hlavných surovín iba z tohto zoznamu: ${chips}. image_url: odkaz na h
       tools: url ? [{ type: model.includes('haiku') ? 'web_fetch_20250910' : 'web_fetch_20260209', name: 'web_fetch', max_uses: 2 }] : undefined,
     });
     S.myRecipes = S.myRecipes || [];
-    const id = 100000 + S.myRecipes.length + 1 + Math.floor(Math.random() * 1000) * 1000;
+    const id = Math.max(100000, ...S.myRecipes.map(x => x.id)) + 1;
     S.myRecipes.push({ id, mine: true, source: url, title: r.title, cat: r.cat, time: r.time, portions: 1, prep: false,
       kcal: Math.max(0, +r.kcal || 0), p: Math.max(0, +r.p || 0), c: Math.max(0, +r.c || 0), f: Math.max(0, +r.f || 0), fib: Math.max(0, +r.fib || 0), ing: r.ing, steps: r.steps,
       ingx: [2, 3, 4].every(n => r[`ing${n}`]?.length === r.ing.length) ? { 2: r.ing2, 3: r.ing3, 4: r.ing4 } : undefined, req: (r.tags || []).filter(t => BOOK?.chips.some(c => c.id === t)).map(t => [t]),
@@ -1397,6 +1397,10 @@ ${cands.map(line).join('\n')}` }],
   const sum = k => res.shopping.reduce((s, it) => s + (Number(it[k]) || 0), 0);
   res.total_kaufland = sum('kaufland');
   res.total_jednota = sum('jednota');
+  // Chýbajúca cena (0) v jednom obchode: ber cenu z druhého.
+  res.shopping.forEach(it => { if (!it.kaufland) it.kaufland = it.jednota; if (!it.jednota) it.jednota = it.kaufland; });
+  res.total_kaufland = sum('kaufland');
+  res.total_jednota = sum('jednota');
   res.total_best = res.shopping.reduce((s, it) => s + Math.min(Number(it.kaufland) || 0, Number(it.jednota) || 0), 0);
   return { form: f, result: res, ts: Date.now() };
 }
@@ -1670,7 +1674,7 @@ function openWater() {
     <div class="water-big"><b>${liters(water)} l</b><span class="muted"> z ${liters(wt)} l</span></div>
     <div class="drinks">${DRINKS.map(([k, l, ml]) => `<button class="drink" data-drink="${ml}">${icon(k, 30, 1.6)}<b>${l}</b><span>${ml} ml</span></button>`).join('')}</div>
     ${water && lastDrink.date === curDate && lastDrink.ml ? `<button class="btn" data-drink="${-lastDrink.ml}">${icon('minus', 18, 2.4)} Vrátiť posledné (${lastDrink.ml} ml)</button>`
-      : water && !lastDrink.undone ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
+      : water && !(lastDrink.undone && lastDrink.date === curDate) ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
   `);
 }
 let lastDrink = {};
@@ -2451,7 +2455,7 @@ function openEntry(id, again = false) {
   const e = S.entries.find(x => x.id === id);
   if (!e) return;
   if (again) {
-    if (!e.g) return addEntries([{ ...e }], 'znova');
+    if (!e.g) return addEntries([{ ...e, ts: undefined }], 'znova');
     const per = perGramFromEntry(e);
     openSheet(e.name, `
       <label class="field">Množstvo (g)<input class="input" id="e-g" type="text" inputmode="decimal" autocomplete="off" value="${r0(e.g)}"></label>
@@ -2532,7 +2536,7 @@ function openProfile() {
     ${first ? '<p class="small muted" style="margin-top:16px">Ďalšie nastavenia (kuchárka, záloha) nájdeš tu neskôr.</p>' : `
     <h3 class="sub-h">Športová kuchárka</h3>
     <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá, odomkneš ju svojím súkromným odkazom.'}</p>
-    ${BOOK ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
+    ${BOOK && !window.JEDLO_KEY ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
 
     <h3 class="sub-h">Ceny z bločkov</h3>
     <p class="small muted" style="margin-bottom:8px">${S.prices?.length ? `Uložené: ${S.prices.length} ${plural(S.prices.length, 'položka', 'položky', 'položiek')}. Používajú sa pri pláne nákupu.` : 'Zatiaľ žiadne. Bloček odfotíš v Pláne a nákupe.'}</p>
@@ -2612,6 +2616,8 @@ document.addEventListener('click', ev => {
   else if (d.act === 'book-lock') {
     BOOK = null;
     cryptoKey = keyPromise = null;
+    photoUrls.forEach(u => { if (u?.startsWith('blob:')) URL.revokeObjectURL(u); });
+    photoUrls.clear();
     try { localStorage.removeItem(BOOK_KEY); localStorage.removeItem(PASS_KEY); } catch { /* nič */ }
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
