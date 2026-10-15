@@ -444,6 +444,8 @@ body:has(.sheet-bg:not([hidden])) .toast, body:has(.cook-mode:not([hidden])) .to
   .s-bad, .bad-tag { color: #d70015; }
   .warn-tag, .cm-n { color: var(--orange-ink); }
   .star.on, .rating { color: #f5a623; }
+  .ai-sum b.good { color: #248a3d; }
+  .ai-sum b.bad { color: #d70015; }
   .seg button.on { background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04); }
   .input::placeholder { color: rgba(60, 60, 67, .45); }
   .s-mid { background: rgba(255, 204, 0, 0.22); }

@@ -281,7 +281,7 @@ function dayTotals(date) {
   const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, scoreW: 0, n: 0 };
   for (const e of S.entries) {
     if (e.date !== date) continue;
-    t.kcal += e.kcal; t.p += e.p; t.c += e.c; t.f += e.f; t.fib += e.fib || 0;
+    t.kcal += e.kcal || 0; t.p += e.p || 0; t.c += e.c || 0; t.f += e.f || 0; t.fib += e.fib || 0;
     t.scoreW += (e.score || 5) * e.kcal; t.n++;
   }
   t.score = t.kcal ? t.scoreW / t.kcal : null;
@@ -526,7 +526,7 @@ function copyDayToToday() {
   if (already && !confirm('Niektoré z týchto jedál už dnes máš. Skopírovať aj tak?')) return;
   const added = items.map(e => { const { id, thumb, ...rest } = e; return { ...rest, id: uid(), date: today, ts: tsOn(today, new Date(e.ts)) }; });
   S.entries.push(...added);
-  save();
+  if (!save()) { S.entries.splice(S.entries.length - added.length, added.length); return; }
   curDate = today;
   render();
   const ids = new Set(added.map(e => e.id));
@@ -571,7 +571,7 @@ function dayScore(date, t, tot) {
     protein: Math.min(1, pShare / pTarget),
     fiber: Math.min(1, (tot.fib / tot.kcal) * 1000 / 14),
   };
-  const score = Math.round(100 * (0.6 * parts.quality + 0.25 * parts.protein + 0.15 * parts.fiber));
+  const score = Math.max(0, Math.min(100, Math.round(100 * (0.6 * parts.quality + 0.25 * parts.protein + 0.15 * parts.fiber)) || 0));
   const tips = {
     quality: 'veľa spracovaného jedla',
     protein: 'málo bielkovín v jedle',
@@ -641,7 +641,7 @@ let dayAIBusy = null;
 async function runDayAI(btn) {
   if (btn.classList.contains('busy') || dayAIBusy === curDate) return;
   // Hodnotenie sa nemení, kým sa nezmenia jedlá, nemá zmysel platiť znova.
-  if (S.aiDay?.[curDate]?.hash === dayHash(curDate)) return toast('Hodnotenie je aktuálne. Zmení sa po ďalšom jedle.');
+  if (S.aiDay?.[curDate]?.hash === dayHash(curDate)) return toast('Hodnotenie je aktuálne.');
   btn.classList.add('busy');
   toast('AI hodnotí tvoj deň…');
   try {
@@ -965,7 +965,7 @@ function scaleLine(line, factor) {
 function recipeIng(r, n = 1) {
   const f = r.portions > 1 ? 1 / r.portions : 1;
   const base = r.ing1 || r.ing.map(l => scaleLine(l, f));
-  const lines = n === 1 ? base : r.ingx?.[n] || base.map(l => scaleLine(l, n));
+  const lines = n === 1 ? base : r.ingx?.[n]?.length === base.length ? r.ingx[n] : base.map(l => scaleLine(l, n));
   return lines.filter(l => !/^(Na|na) \d+ porc|^Recept na \d/.test(l));
 }
 
@@ -976,6 +976,16 @@ function ingHtml(r, n) {
   const head = l => /:$/.test(l) || (!/\d|[½¼¾,]/.test(l) && l.split(/\s+/).length <= 3 && /vrstv|cesto|plnk|omáčk|polev|krém|posýpk|dresing|marinád|zdobeni|príloh|základ/i.test(l));
   return recipeIng(r, n).map(l => head(l) ? `<p class="ing-h">${esc(l.replace(/:$/, ''))}</p>` : `<p>${esc(l)}</p>`).join('');
 }
+// Kalórie a makrá pre zvolený počet porcií (1 porcia × n).
+function macroHtml(r, n) {
+  return `<div class="grid4">
+      <div><b>${r0(r.kcal * n)}</b><div class="lbl">kcal</div></div>
+      <div><b>${r0(r.p * n)} g</b><div class="lbl">bielkoviny</div></div>
+      <div><b>${r0(r.c * n)} g</b><div class="lbl">sacharidy</div></div>
+      <div><b>${r0(r.f * n)} g</b><div class="lbl">tuky</div></div></div>
+      <p class="small muted" style="margin-top:8px">${n === 1 ? 'Hodnoty na 1 porciu.' : `Spolu na ${portionsLabel(n)}, 1 porcia má ${r0(r.kcal)} kcal.`}</p>`;
+}
+
 function portionSeg(n) {
   return `<div class="seg" id="r-portions">${[1, 2, 3, 4].map(k => `<button data-rport="${k}" class="${k === n ? 'on' : ''}">${portionsLabel(k)}</button>`).join('')}</div>`;
 }
@@ -1065,7 +1075,7 @@ function openAddRecipe(prefill = '') {
 async function importRecipe(btn) {
   const url = $('#rec-url').value.trim(), text = $('#rec-text').value.trim();
   const photo = recipePhoto;
-  if (!url && !text && !photo) return toast('Odfoť jedlo, napíš ako si ho robil, alebo vlož odkaz.');
+  if (!url && !text && !photo) return toast('Pridaj fotku, popis alebo odkaz.');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Spracúvam recept…';
   const model = S.profile.model || MODELS[0][0];
@@ -1086,7 +1096,7 @@ tags: id hlavných surovín iba z tohto zoznamu: ${chips}. image_url: odkaz na h
       tools: url ? [{ type: model.includes('haiku') ? 'web_fetch_20250910' : 'web_fetch_20260209', name: 'web_fetch', max_uses: 2 }] : undefined,
     });
     S.myRecipes = S.myRecipes || [];
-    const id = 100000 + S.myRecipes.length + 1 + Math.floor(Math.random() * 1000) * 1000;
+    const id = Math.max(100000, ...S.myRecipes.map(x => x.id)) + 1;
     S.myRecipes.push({ id, mine: true, source: url, title: r.title, cat: r.cat, time: r.time, portions: 1, prep: false,
       kcal: Math.max(0, +r.kcal || 0), p: Math.max(0, +r.p || 0), c: Math.max(0, +r.c || 0), f: Math.max(0, +r.f || 0), fib: Math.max(0, +r.fib || 0), ing: r.ing, steps: r.steps,
       ingx: [2, 3, 4].every(n => r[`ing${n}`]?.length === r.ing.length) ? { 2: r.ing2, 3: r.ing3, 4: r.ing4 } : undefined, req: (r.tags || []).filter(t => BOOK?.chips.some(c => c.id === t)).map(t => [t]),
@@ -1194,12 +1204,7 @@ function openRecipe(id, back = null, eatN = 1) {
     <div class="rate-row"><button class="round fav-btn ${m.fav ? 'on' : ''}" data-rfav="${r.id}" aria-label="Obľúbený">${icon('heart', 20, 2)}</button>${starsHtml(r.id, m.rating)}</div>
     <input class="input" id="r-note" placeholder="Moja poznámka" value="${esc(m.note || '')}" style="margin-bottom:10px">
     ${meta ? `<p class="small muted" style="margin:0 0 12px">${esc(meta)}</p>` : ''}
-    ${r.kcal ? `<div class="ai-sum"><div class="grid4">
-      <div><b>${r0(r.kcal)}</b><div class="lbl">kcal</div></div>
-      <div><b>${r0(r.p)} g</b><div class="lbl">bielkoviny</div></div>
-      <div><b>${r0(r.c)} g</b><div class="lbl">sacharidy</div></div>
-      <div><b>${r0(r.f)} g</b><div class="lbl">tuky</div></div></div>
-      <p class="small muted" style="margin-top:8px">Hodnoty na 1 porciu.</p></div>` : ''}
+    ${r.kcal ? `<div class="ai-sum" id="r-macros">${macroHtml(r, cookN())}</div>` : ''}
     <h3 class="sub-h" style="margin-top:4px">Suroviny</h3>
     ${portionSeg(cookN())}
     <div class="ing" id="r-ing">${ingHtml(r, cookN())}</div>
@@ -1208,11 +1213,12 @@ function openRecipe(id, back = null, eatN = 1) {
     <h3 class="sub-h">Postup</h3>
     ${r.portions > 1 ? `<p class="small muted" style="margin:-2px 0 10px">Čísla v postupe sú z pôvodného receptu na ${r.portions} ${r.portions < 5 ? 'porcie' : 'porcií'}, množstvá ber zo surovín vyššie.</p>` : ''}
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
+      <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}
     ${r.kcal ? `<h3 class="sub-h">Zjedol som</h3><div class="grid3">${[...new Set([eatN, 1, 1.5, 2])].slice(0, 3).sort((a, b) => a - b).map(n =>
       `<button class="btn ${n === eatN ? 'primary' : ''}" data-eat="${r.id}" data-n="${n}">${portionsLabel(n)}</button>`).join('')}</div>` : ''}
     <button class="btn" data-cook-mode="${r.id}" style="margin-top:10px">Variť krok po kroku</button>
-    ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
-      <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}`;
+`;
   $('#sheet-body').scrollTop = 0;
   $('.sheet').scrollTop = 0;
   $('#r-note').addEventListener('change', e => { S.recipeMeta[r.id] = { ...rmeta(r.id), note: e.target.value.trim() }; save(); });
@@ -1266,7 +1272,7 @@ function planCard() {
 function eur(n) { return (Number(n) || 0).toLocaleString('sk-SK', { style: 'currency', currency: 'EUR' }); }
 
 function openPlan() {
-  if (!BOOK) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
+  if (!BOOK) return toast('Najprv odomkni kuchárku.');
   if (S.mealPlan) return showPlan();
   planStep1();
 }
@@ -1390,6 +1396,10 @@ ${cands.map(line).join('\n')}` }],
     .map(m => ({ ...m, portions: Math.min(3, Math.max(0.5, Math.round((Number(m.portions) || 1) * 2) / 2)) })) }));
   res.shopping = (res.shopping || []).map(it => ({ ...it, kaufland: Math.max(0, +it.kaufland || 0), jednota: Math.max(0, +it.jednota || 0), done: false }));
   const sum = k => res.shopping.reduce((s, it) => s + (Number(it[k]) || 0), 0);
+  res.total_kaufland = sum('kaufland');
+  res.total_jednota = sum('jednota');
+  // Chýbajúca cena (0) v jednom obchode: ber cenu z druhého.
+  res.shopping.forEach(it => { if (!it.kaufland) it.kaufland = it.jednota; if (!it.jednota) it.jednota = it.kaufland; });
   res.total_kaufland = sum('kaufland');
   res.total_jednota = sum('jednota');
   res.total_best = res.shopping.reduce((s, it) => s + Math.min(Number(it.kaufland) || 0, Number(it.jednota) || 0), 0);
@@ -1541,8 +1551,10 @@ function openAllRecipes() {
     const stems = norm($('#recipe-q').value.trim()).split(/\s+/).filter(Boolean).map(w => w.length > 5 ? w.slice(0, -2) : w.length > 3 ? w.slice(0, -1) : w);
     const hit = r => (!stems.length || stems.every(st => norm(r.title + ' ' + r.ing.join(' ') + ' ' + r.req.flat().join(' ')).includes(st))) && (!onlyFav || rmeta(r.id).fav);
     const hidden = allRecipes().filter(r => !fitsDiet(r, profileDiet())).length;
-    $('#recipe-results').innerHTML = (hidden ? `<p class="small muted" style="margin-top:8px">${hidden} ${plural(hidden, 'recept je skrytý', 'recepty sú skryté', 'receptov je skrytých')} pre tvoje alergie.</p>` : '') + cats.map(c => {
-      const rs = allRecipes().filter(r => r.cat === c.id && hit(r) && fitsDiet(r, profileDiet()));
+    const mine = (S.myRecipes || []).filter(r => hit(r));
+    $('#recipe-results').innerHTML = (mine.length ? `<h3 class="sub-h" style="margin-top:10px">Moje recepty <span class="muted small">${mine.length}</span></h3>
+        <div class="rgrid">${mine.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '') + (hidden ? `<p class="small muted" style="margin-top:8px">${hidden} ${plural(hidden, 'recept je skrytý', 'recepty sú skryté', 'receptov je skrytých')} pre tvoje alergie.</p>` : '') + cats.map(c => {
+      const rs = (BOOK?.recipes || []).filter(r => r.cat === c.id && hit(r) && fitsDiet(r, profileDiet()));
       return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3>
         <div class="rgrid">${rs.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '';
     }).join('') || '<div class="empty">Nič sa nenašlo.</div>';
@@ -1665,7 +1677,7 @@ function openWater() {
     <div class="water-big"><b>${liters(water)} l</b><span class="muted"> z ${liters(wt)} l</span></div>
     <div class="drinks">${DRINKS.map(([k, l, ml]) => `<button class="drink" data-drink="${ml}">${icon(k, 30, 1.6)}<b>${l}</b><span>${ml} ml</span></button>`).join('')}</div>
     ${water && lastDrink.date === curDate && lastDrink.ml ? `<button class="btn" data-drink="${-lastDrink.ml}">${icon('minus', 18, 2.4)} Vrátiť posledné (${lastDrink.ml} ml)</button>`
-      : water && !lastDrink.undone ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
+      : water && !(lastDrink.undone && lastDrink.date === curDate) ? `<button class="btn" data-drink="-250">${icon('minus', 18, 2.4)} Odobrať 250 ml</button>` : ''}
   `);
 }
 let lastDrink = {};
@@ -1957,7 +1969,7 @@ async function scanFromPhoto(file) {
     try { res = await new ZXing.BrowserMultiFormatReader(zxHints()).decodeFromImageUrl(url); } finally { URL.revokeObjectURL(url); }
     lookupProduct(res.getText());
   } catch {
-    toast('Kód sa nepodarilo prečítať. Skús ostrejšiu fotku alebo zadaj číslo.');
+    toast('Kód sa nedal prečítať, zadaj číslo.');
   }
 }
 
@@ -2204,7 +2216,7 @@ function openTextAI() {
     const base = $('#ai-text').value ? $('#ai-text').value + ' ' : '';
     rec.onresult = ev => { const ta = $('#ai-text'); if (ta) ta.value = base + [...ev.results].map(r => r[0].transcript).join(' '); };
     rec.onend = () => { if (activeRec === rec) activeRec = null; const m = $('#mic'); if (m) { m.classList.remove('rec'); m.lastChild.textContent = 'Hovor'; } };
-    rec.onerror = ev => { if (ev.error !== 'aborted' && ev.error !== 'no-speech' && activeRec === rec) toast('Diktovanie nefunguje, použi mikrofón na klávesnici.'); };
+    rec.onerror = ev => { if (ev.error !== 'aborted' && ev.error !== 'no-speech' && activeRec === rec) toast('Diktuj cez mikrofón na klávesnici.'); };
     $('#mic').classList.add('rec');
     $('#mic').lastChild.textContent = 'Počúvam…';
     rec.start();
@@ -2446,7 +2458,7 @@ function openEntry(id, again = false) {
   const e = S.entries.find(x => x.id === id);
   if (!e) return;
   if (again) {
-    if (!e.g) return addEntries([{ ...e }], 'znova');
+    if (!e.g) return addEntries([{ ...e, ts: undefined }], 'znova');
     const per = perGramFromEntry(e);
     openSheet(e.name, `
       <label class="field">Množstvo (g)<input class="input" id="e-g" type="text" inputmode="decimal" autocomplete="off" value="${r0(e.g)}"></label>
@@ -2527,7 +2539,7 @@ function openProfile() {
     ${first ? '<p class="small muted" style="margin-top:16px">Ďalšie nastavenia (kuchárka, záloha) nájdeš tu neskôr.</p>' : `
     <h3 class="sub-h">Športová kuchárka</h3>
     <p class="small muted" style="margin-bottom:8px">${BOOK ? `Odomknutá: ${BOOK.recipes.length} receptov.` : 'Zamknutá, odomkneš ju svojím súkromným odkazom.'}</p>
-    ${BOOK ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
+    ${BOOK && !window.JEDLO_KEY ? '<button class="btn" data-act="book-lock">Zamknúť kuchárku v tomto zariadení</button>' : ''}
 
     <h3 class="sub-h">Ceny z bločkov</h3>
     <p class="small muted" style="margin-bottom:8px">${S.prices?.length ? `Uložené: ${S.prices.length} ${plural(S.prices.length, 'položka', 'položky', 'položiek')}. Používajú sa pri pláne nákupu.` : 'Zatiaľ žiadne. Bloček odfotíš v Pláne a nákupe.'}</p>
@@ -2578,7 +2590,7 @@ function openProfile() {
 let bookReady = Promise.resolve();
 function withBook(fn) {
   if (BOOK) return fn();
-  if (!storedPass()) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
+  if (!storedPass()) return toast('Najprv odomkni kuchárku.');
   bookReady.then(() => BOOK ? null : (bookReady = refreshBook()))
     .then(() => BOOK ? fn() : toast(storedPass() ? 'Kuchárku sa nepodarilo načítať, skontroluj internet.' : 'Kľúč ku kuchárke už neplatí, vlož odkaz znova.'));
 }
@@ -2607,6 +2619,8 @@ document.addEventListener('click', ev => {
   else if (d.act === 'book-lock') {
     BOOK = null;
     cryptoKey = keyPromise = null;
+    photoUrls.forEach(u => { if (u?.startsWith('blob:')) URL.revokeObjectURL(u); });
+    photoUrls.clear();
     try { localStorage.removeItem(BOOK_KEY); localStorage.removeItem(PASS_KEY); } catch { /* nič */ }
     closeSheet(); render(); toast('Kuchárka zamknutá');
   }
@@ -2624,7 +2638,10 @@ document.addEventListener('click', ev => {
     save();
     t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === t));
     const r = findRecipe($('[data-cook-mode]')?.dataset.cookMode);
-    if (r) $('#r-ing').innerHTML = ingHtml(r, cookN());
+    if (r) {
+      $('#r-ing').innerHTML = ingHtml(r, cookN());
+      if ($('#r-macros')) $('#r-macros').innerHTML = macroHtml(r, cookN());
+    }
   }
   else if (d.act === 'cook-close') stopCooking();
   else if (d.act === 'cook-next') { if (cookState.i >= cookState.r.steps.length - 1) stopCooking(); else { cookState.i++; drawCooking(); } }
