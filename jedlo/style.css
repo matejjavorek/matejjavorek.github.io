@@ -449,3 +449,8 @@ body:has(.sheet-bg:not([hidden])) .toast, body:has(.cook-mode:not([hidden])) .to
   .s-mid { background: rgba(255, 204, 0, 0.22); }
   .sbadge { color: color-mix(in srgb, var(--sc) 70%, #000); }
 }
+
+/* Dlhé slová bez medzier (názvy jedál, suplementov) nesmú rozťahovať obrazovku. */
+.sheet-head h2 { min-width: 0; overflow-wrap: anywhere; }
+.chip-btn, .list-item > span, .supp-name, .ai-sum p, .entry .info, .rinfo b, .diet-box, .ing p, .steps li, .tile-main { overflow-wrap: anywhere; }
+.chip-btn { max-width: 100%; }
