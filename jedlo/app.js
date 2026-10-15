@@ -641,7 +641,7 @@ let dayAIBusy = null;
 async function runDayAI(btn) {
   if (btn.classList.contains('busy') || dayAIBusy === curDate) return;
   // Hodnotenie sa nemení, kým sa nezmenia jedlá, nemá zmysel platiť znova.
-  if (S.aiDay?.[curDate]?.hash === dayHash(curDate)) return toast('Hodnotenie je aktuálne. Zmení sa po ďalšom jedle.');
+  if (S.aiDay?.[curDate]?.hash === dayHash(curDate)) return toast('Hodnotenie je aktuálne.');
   btn.classList.add('busy');
   toast('AI hodnotí tvoj deň…');
   try {
@@ -1075,7 +1075,7 @@ function openAddRecipe(prefill = '') {
 async function importRecipe(btn) {
   const url = $('#rec-url').value.trim(), text = $('#rec-text').value.trim();
   const photo = recipePhoto;
-  if (!url && !text && !photo) return toast('Odfoť jedlo, napíš ako si ho robil, alebo vlož odkaz.');
+  if (!url && !text && !photo) return toast('Pridaj fotku, popis alebo odkaz.');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Spracúvam recept…';
   const model = S.profile.model || MODELS[0][0];
@@ -1213,11 +1213,12 @@ function openRecipe(id, back = null, eatN = 1) {
     <h3 class="sub-h">Postup</h3>
     ${r.portions > 1 ? `<p class="small muted" style="margin:-2px 0 10px">Čísla v postupe sú z pôvodného receptu na ${r.portions} ${r.portions < 5 ? 'porcie' : 'porcií'}, množstvá ber zo surovín vyššie.</p>` : ''}
     <ol class="steps">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
+      <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}
     ${r.kcal ? `<h3 class="sub-h">Zjedol som</h3><div class="grid3">${[...new Set([eatN, 1, 1.5, 2])].slice(0, 3).sort((a, b) => a - b).map(n =>
       `<button class="btn ${n === eatN ? 'primary' : ''}" data-eat="${r.id}" data-n="${n}">${portionsLabel(n)}</button>`).join('')}</div>` : ''}
     <button class="btn" data-cook-mode="${r.id}" style="margin-top:10px">Variť krok po kroku</button>
-    ${r.mine ? `${r.source ? `<p class="small muted" style="margin-top:14px;overflow-wrap:anywhere">Zdroj: ${esc(r.source)}</p>` : ''}
-      <button class="btn danger" data-act="recipe-del" data-id="${r.id}" style="margin-top:10px">Zmazať môj recept</button>` : ''}`;
+`;
   $('#sheet-body').scrollTop = 0;
   $('.sheet').scrollTop = 0;
   $('#r-note').addEventListener('change', e => { S.recipeMeta[r.id] = { ...rmeta(r.id), note: e.target.value.trim() }; save(); });
@@ -1271,7 +1272,7 @@ function planCard() {
 function eur(n) { return (Number(n) || 0).toLocaleString('sk-SK', { style: 'currency', currency: 'EUR' }); }
 
 function openPlan() {
-  if (!BOOK) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
+  if (!BOOK) return toast('Najprv odomkni kuchárku.');
   if (S.mealPlan) return showPlan();
   planStep1();
 }
@@ -1550,8 +1551,10 @@ function openAllRecipes() {
     const stems = norm($('#recipe-q').value.trim()).split(/\s+/).filter(Boolean).map(w => w.length > 5 ? w.slice(0, -2) : w.length > 3 ? w.slice(0, -1) : w);
     const hit = r => (!stems.length || stems.every(st => norm(r.title + ' ' + r.ing.join(' ') + ' ' + r.req.flat().join(' ')).includes(st))) && (!onlyFav || rmeta(r.id).fav);
     const hidden = allRecipes().filter(r => !fitsDiet(r, profileDiet())).length;
-    $('#recipe-results').innerHTML = (hidden ? `<p class="small muted" style="margin-top:8px">${hidden} ${plural(hidden, 'recept je skrytý', 'recepty sú skryté', 'receptov je skrytých')} pre tvoje alergie.</p>` : '') + cats.map(c => {
-      const rs = allRecipes().filter(r => r.cat === c.id && hit(r) && fitsDiet(r, profileDiet()));
+    const mine = (S.myRecipes || []).filter(r => hit(r));
+    $('#recipe-results').innerHTML = (mine.length ? `<h3 class="sub-h" style="margin-top:10px">Moje recepty <span class="muted small">${mine.length}</span></h3>
+        <div class="rgrid">${mine.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '') + (hidden ? `<p class="small muted" style="margin-top:8px">${hidden} ${plural(hidden, 'recept je skrytý', 'recepty sú skryté', 'receptov je skrytých')} pre tvoje alergie.</p>` : '') + cats.map(c => {
+      const rs = (BOOK?.recipes || []).filter(r => r.cat === c.id && hit(r) && fitsDiet(r, profileDiet()));
       return rs.length ? `<h3 class="sub-h" style="margin-top:10px">${c.label} <span class="muted small">${rs.length}</span></h3>
         <div class="rgrid">${rs.map(r => recipeCard({ r, missing: [] }, false)).join('')}</div>` : '';
     }).join('') || '<div class="empty">Nič sa nenašlo.</div>';
@@ -1966,7 +1969,7 @@ async function scanFromPhoto(file) {
     try { res = await new ZXing.BrowserMultiFormatReader(zxHints()).decodeFromImageUrl(url); } finally { URL.revokeObjectURL(url); }
     lookupProduct(res.getText());
   } catch {
-    toast('Kód sa nepodarilo prečítať. Skús ostrejšiu fotku alebo zadaj číslo.');
+    toast('Kód sa nedal prečítať, zadaj číslo.');
   }
 }
 
@@ -2213,7 +2216,7 @@ function openTextAI() {
     const base = $('#ai-text').value ? $('#ai-text').value + ' ' : '';
     rec.onresult = ev => { const ta = $('#ai-text'); if (ta) ta.value = base + [...ev.results].map(r => r[0].transcript).join(' '); };
     rec.onend = () => { if (activeRec === rec) activeRec = null; const m = $('#mic'); if (m) { m.classList.remove('rec'); m.lastChild.textContent = 'Hovor'; } };
-    rec.onerror = ev => { if (ev.error !== 'aborted' && ev.error !== 'no-speech' && activeRec === rec) toast('Diktovanie nefunguje, použi mikrofón na klávesnici.'); };
+    rec.onerror = ev => { if (ev.error !== 'aborted' && ev.error !== 'no-speech' && activeRec === rec) toast('Diktuj cez mikrofón na klávesnici.'); };
     $('#mic').classList.add('rec');
     $('#mic').lastChild.textContent = 'Počúvam…';
     rec.start();
@@ -2587,7 +2590,7 @@ function openProfile() {
 let bookReady = Promise.resolve();
 function withBook(fn) {
   if (BOOK) return fn();
-  if (!storedPass()) return toast('Najprv odomkni kuchárku (karta Čo si uvarím?).');
+  if (!storedPass()) return toast('Najprv odomkni kuchárku.');
   bookReady.then(() => BOOK ? null : (bookReady = refreshBook()))
     .then(() => BOOK ? fn() : toast(storedPass() ? 'Kuchárku sa nepodarilo načítať, skontroluj internet.' : 'Kľúč ku kuchárke už neplatí, vlož odkaz znova.'));
 }
