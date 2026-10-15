@@ -123,7 +123,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Pás Nezdravo – Zdravo */
 .meter-card { display: block; width: 100%; border: 0; text-align: left; color: var(--text); padding: 30px 16px 16px; }
-.meter-card.empty .meter { opacity: .35; }
+.meter-card.no-score .meter { opacity: .35; }
 .meter-card.busy .meter i { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .4; } }
 .meter {
@@ -144,7 +144,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* Voda a váha */
 .tile { display: flex; align-items: center; gap: 14px; }
-.tile .ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+.ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; flex: none; }
 .ico.water { background: rgba(100, 210, 255, 0.15); color: var(--water); }
 .ico.weight { background: rgba(255, 159, 10, 0.15); color: var(--orange); }
 .tile-main { flex: 1; min-width: 0; display: grid; gap: 3px; }
@@ -305,9 +305,9 @@ body:has(.sheet-bg:not([hidden])), body:has(.cook-mode:not([hidden])) { overflow
 .steps { margin: 0; padding-left: 22px; display: grid; gap: 10px; font-size: 15px; }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; pointer-events: none; text-align: center;
+  position: fixed; left: 16px; right: 16px; width: fit-content; margin: 0 auto; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30; pointer-events: none; text-align: center;
   background: var(--card3); color: var(--text); padding: 10px 16px; border-radius: 14px;
-  font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); max-width: calc(100% - 32px);
+  font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 .toast[hidden] { display: none; }
 /* Na hlavnej stránke dole nad „+“, pri otvorenom paneli hore (dole sú tlačidlá panela). */
@@ -454,3 +454,11 @@ body:has(.sheet-bg:not([hidden])) .toast, body:has(.cook-mode:not([hidden])) .to
 .sheet-head h2 { min-width: 0; overflow-wrap: anywhere; }
 .chip-btn, .list-item > span, .supp-name, .ai-sum p, .entry .info, .rinfo b, .diet-box, .ing p, .steps li, .tile-main { overflow-wrap: anywhere; }
 .chip-btn { max-width: 100%; }
+
+/* Drobnosti z vizuálnej kontroly */
+.entry .info .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grid3 > .btn { padding: 14px 6px; font-size: 16px; white-space: nowrap; }
+.chip-btn { text-align: left; }
+.chip-btn[data-fav], .chip-btn[data-fav-del] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#title { min-width: 4.6em; }
+.plan-row .name { white-space: normal; }
