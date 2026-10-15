@@ -747,8 +747,9 @@ async function unlockBook(password) {
   toast(`Kuchárka odomknutá: ${data.recipes.length} receptov`);
 }
 
+// Súkromná verzia (za prihlásením Cloudflare Access) môže mať kľúč priamo v kluc.js, kuchárka je potom vždy odomknutá.
 function storedPass() {
-  try { return localStorage.getItem(PASS_KEY) || ''; } catch { return ''; }
+  try { return localStorage.getItem(PASS_KEY) || window.JEDLO_KEY || ''; } catch { return window.JEDLO_KEY || ''; }
 }
 
 // Pri štarte potichu načítaj novšiu verziu kuchárky (napr. keď pribudnú recepty).
