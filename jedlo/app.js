@@ -92,7 +92,7 @@ function normalize(raw) {
       kcal: pos(r.kcal), p: pos(r.p), c: pos(r.c), f: pos(r.f), fib: pos(r.fib), ing: strs(r.ing), steps: strs(r.steps),
       req: arr(r.req).map(a => strs(a).map(x => x.replace(/[^\w-]/g, ''))),
       ...(r.ingx ? { ingx: Object.fromEntries(Object.entries(obj(r.ingx)).filter(([k]) => /^[2-4]$/.test(k)).map(([k, v]) => [k, strs(v)])) } : {}),
-      img: /^https:\/\//.test(r.img || '') ? str(r.img, 500) : /^data:image\/jpeg;base64,[\w+/=]+$/.test(r.img || '') ? r.img : '', photo: /^(https:|data:image\/jpeg)/.test(r.img || ''),
+      img: /^https:\/\//.test(r.img || '') ? str(r.img, 500) : /^data:image\/jpeg;base64,[\w+/=]+$/.test(r.img || '') || /^idb:\d+$/.test(r.img || '') ? r.img : '', photo: /^(https:|data:image\/jpeg|idb:)/.test(r.img || ''),
     })),
     prices: arr(s.prices).map(obj).filter(x => pos(x.price) > 0).map(x => ({ store: str(x.store, 20), name: str(x.name, 80), amount: str(x.amount, 30), price: pos(x.price), date: isDay(x.date) ? x.date : '' })),
     scans: arr(s.scans).map(obj).map(x => ({ code: idOf(x.code), name: str(x.name, 120), score: Math.min(100, pos(x.score)) })),
@@ -131,8 +131,13 @@ function save() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(S));
     return true;
-  } catch {
-    // Plné úložisko: zmaž náhľady fotiek starších ako 14 dní a skús znova.
+  } catch (first) {
+    const full = e => e?.name === 'QuotaExceededError' || e?.code === 22;
+    if (!full(first)) {
+      if (!saveWarned) { saveWarned = true; alert('Prehliadač nedovoľuje ukladať dáta (súkromný režim?). Zmeny sa po zatvorení stratia.'); }
+      return false;
+    }
+    // Naozaj plné úložisko: zmaž náhľady fotiek starších ako 14 dní a skús znova.
     const limit = dayKey(addDays(new Date(), -14));
     S.entries.forEach(e => { if (e.date < limit) delete e.thumb; });
     try {
@@ -256,10 +261,16 @@ function dayType(date) {
 }
 function sortedWeights() { return [...S.weights].sort((a, b) => a.date.localeCompare(b.date)); }
 function currentWeight() { return S.weights.length ? sortedWeights().at(-1).kg : S.profile.weight; }
+// Váha platná v daný deň (posledné váženie do toho dňa), aby sa staré ciele spätne nemenili.
+function weightOn(date) {
+  const ws = sortedWeights();
+  if (!ws.length) return S.profile.weight;
+  return (ws.filter(w => w.date <= date).at(-1) || ws[0]).kg;
+}
 
 function targets(date) {
   const p = S.profile;
-  const w = currentWeight();
+  const w = weightOn(date);
   if (!w || !p.height || !p.age) return null;
   const bmr = 10 * w + 6.25 * p.height - 5 * p.age + (p.sex === 'f' ? -161 : 5);
   // Typ dňa mení výdaj; kalórie z hodiniek majú prednosť (aktívne kcal + 10 % na trávenie).
@@ -789,7 +800,13 @@ async function unlockFromClipboard() {
 
 async function photoUrl(id) {
   if (photoUrls.has(id)) return photoUrls.get(id);
-  if (id >= 100000) return findRecipe(id)?.img || null;
+  if (id >= 100000) {
+    const img = findRecipe(id)?.img || null;
+    if (!img?.startsWith('idb:')) return img;
+    const data = await photoDB.get(img.slice(4)).catch(() => null);
+    if (data) photoUrls.set(id, data);
+    return data || null;
+  }
   if (BOOK?.recipes.find(x => x.id === id)?.photo === false) return null;
   if (!cryptoKey) {
     const pass = storedPass();
@@ -1044,6 +1061,35 @@ const MYRECIPE_SCHEMA = {
   required: ['title', 'cat', 'time', 'ing', 'ing2', 'ing3', 'ing4', 'steps', 'kcal', 'p', 'c', 'f', 'fib', 'tags', 'image_url'],
   additionalProperties: false,
 };
+// Fotky vlastných receptov sú v IndexedDB (veľa miesta), v dátach je len odkaz idb:<id>.
+const photoDB = (() => {
+  let db;
+  const open = () => db || (db = new Promise((ok, err) => {
+    const r = indexedDB.open('jedlo-foto', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('foto');
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => err(r.error);
+  }));
+  const run = (mode, fn) => open().then(d => new Promise((ok, err) => {
+    const tx = d.transaction('foto', mode), q = fn(tx.objectStore('foto'));
+    tx.oncomplete = () => ok(q?.result);
+    tx.onerror = () => err(tx.error);
+  }));
+  return {
+    put: (k, v) => run('readwrite', st => st.put(v, k)),
+    get: k => run('readonly', st => st.get(k)),
+    del: k => run('readwrite', st => st.delete(k)),
+  };
+})();
+// Staré recepty s fotkou priamo v dátach presuň do IndexedDB (uvoľní úložisko).
+(async () => {
+  let moved = false;
+  for (const r of S.myRecipes || []) if (r.img?.startsWith('data:')) {
+    try { await photoDB.put(String(r.id), r.img); r.img = 'idb:' + r.id; moved = true; } catch { /* ostane v dátach */ }
+  }
+  if (moved) save();
+})();
+
 // Fotka vlastného jedla pre recept: { base64 na AI, small na uloženie }.
 let recipePhoto = null, recipeDraft = '';
 async function shrinkDataUrl(dataUrl, max) {
@@ -1100,8 +1146,9 @@ tags: id hlavných surovín iba z tohto zoznamu: ${chips}. image_url: odkaz na h
     S.myRecipes.push({ id, mine: true, source: url, title: r.title, cat: r.cat, time: r.time, portions: 1, prep: false,
       kcal: Math.max(0, +r.kcal || 0), p: Math.max(0, +r.p || 0), c: Math.max(0, +r.c || 0), f: Math.max(0, +r.f || 0), fib: Math.max(0, +r.fib || 0), ing: r.ing, steps: r.steps,
       ingx: [2, 3, 4].every(n => r[`ing${n}`]?.length === r.ing.length) ? { 2: r.ing2, 3: r.ing3, 4: r.ing4 } : undefined, req: (r.tags || []).filter(t => BOOK?.chips.some(c => c.id === t)).map(t => [t]),
-      img: photo ? photo.small : /^https:\/\//.test(r.image_url) ? r.image_url : '', photo: !!photo || /^https:\/\//.test(r.image_url) });
-    if (!save()) { S.myRecipes.pop(); throw new Error('Recept sa nezmestil do úložiska.'); }
+      img: photo ? 'idb:' + id : /^https:\/\//.test(r.image_url) ? r.image_url : '', photo: !!photo || /^https:\/\//.test(r.image_url) });
+    if (photo) await photoDB.put(String(id), photo.small).catch(() => { S.myRecipes.at(-1).img = ''; S.myRecipes.at(-1).photo = false; });
+    if (!save()) { S.myRecipes.pop(); photoDB.del(String(id)).catch(() => {}); throw new Error('Recept sa nezmestil do úložiska.'); }
     recipePhoto = null;
     render();
     toast('Recept pridaný do receptára');
@@ -1770,12 +1817,26 @@ async function callClaude({ system, content, schema, effort = 'medium', maxToken
     headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
     body.fallbacks = 'default';
   }
-  let res;
+  // Časový limit; keď iOS požiadavku zabije pri prepnutí appky, po návrate sa raz zopakuje.
+  const limit = maxTokens > 16000 ? 300000 : 150000;
+  let res, hidden = false;
+  const onHide = () => { if (document.hidden) hidden = true; };
+  document.addEventListener('visibilitychange', onHide);
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers, body: JSON.stringify(body) });
-  } catch {
-    throw new Error('Nie si online alebo sieť nefunguje. Skús znova.');
-  }
+    for (let attempt = 0; ; attempt++) {
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), limit);
+      try {
+        res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal });
+        break;
+      } catch (err) {
+        if (err?.name === 'AbortError' && !hidden) throw new Error('AI neodpovedala včas. Skús znova.');
+        if (!hidden || attempt) throw new Error('Nie si online alebo sieť nefunguje. Skús znova.');
+        // Prerušené na pozadí: počkaj, kým sa appka vráti, a skús ešte raz.
+        if (document.hidden) await new Promise(ok => document.addEventListener('visibilitychange', function f() { if (!document.hidden) { document.removeEventListener('visibilitychange', f); ok(); } }));
+        hidden = false;
+      } finally { clearTimeout(timer); }
+    }
+  } finally { document.removeEventListener('visibilitychange', onHide); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = data?.error?.message || res.statusText;
@@ -2277,8 +2338,8 @@ function showAIResult(res) {
   // Rozumné hranice: nič záporné, žiadne nezmyselne veľké čísla.
   const num = (x, max = 10000) => Math.min(max, Math.max(0, Number(x) || 0));
   const items = (Array.isArray(res.items) ? res.items : []).map(it => {
-    // Bez gramáže ráta AI s porciou, prepočet nech ide od 100 g.
-    const g = num(it.grams, 5000) || 100;
+    // Bez gramáže sú hodnoty za celú porciu: prvé zadané gramy sa stanú základom, kcal sa nezmenia.
+    const g = num(it.grams, 5000);
     return { name: nodash(it.name), g, base: g, kcal: num(it.kcal), p: num(it.protein), c: num(it.carbs), f: num(it.fat), fib: num(it.fiber),
       score: Math.min(10, Math.max(1, Math.round(it.health_score || 5))), gluten: it.gluten || 'mozno', allergens: it.allergens || [] };
   });
@@ -2286,7 +2347,7 @@ function showAIResult(res) {
   // Súčet a riadok položky sa pri písaní gramov prepočítajú bez prekreslenia panela.
   const totHtml = () => {
     const tot = items.reduce((s, it) => {
-      const k = it.g / it.base;
+      const k = it.base ? it.g / it.base : 1;
       s.kcal += it.kcal * k; s.p += it.p * k; s.c += it.c * k; s.f += it.f * k;
       return s;
     }, { kcal: 0, p: 0, c: 0, f: 0 });
@@ -2296,7 +2357,7 @@ function showAIResult(res) {
           <div><b>${r0(tot.f)} g</b><div class="lbl">tuky</div></div>`;
   };
   const infoHtml = it => {
-    const k = it.g / it.base;
+    const k = it.base ? it.g / it.base : 1;
     return `${r0(it.kcal * k)} kcal · B ${r0(it.p * k)} g · S ${r0(it.c * k)} g · T ${r0(it.f * k)} g
           · <span class="score ${scoreClass(it.score)}">${it.score}</span> ${S.profile.glutenFree ? glutenTag(it.gluten) : ''}`;
   };
@@ -2313,7 +2374,7 @@ function showAIResult(res) {
       ${items.map((it, i) => {
         return `<div class="ai-item"><div class="row">
           <input class="input" data-ai-name="${i}" value="${esc(it.name)}" style="flex:1">
-          <input class="input grams" data-ai-g="${i}" type="text" inputmode="decimal" autocomplete="off" value="${r0(it.g)}" aria-label="gramy">
+          <input class="input grams" data-ai-g="${i}" type="text" inputmode="decimal" autocomplete="off" value="${it.g ? r0(it.g) : ''}" placeholder="g" aria-label="gramy">
           <button class="round sm" data-ai-del="${i}" aria-label="Odstrániť">${icon('close', 14, 2.4)}</button></div>
           <div class="small muted" id="ai-info-${i}" style="margin-top:6px">${infoHtml(it)}</div></div>`;
       }).join('')}
@@ -2326,6 +2387,7 @@ function showAIResult(res) {
     document.querySelectorAll('[data-ai-g]').forEach(inp => inp.addEventListener('input', () => {
       const it = items[inp.dataset.aiG];
       it.g = Math.max(0, numIn(inp.value));
+      if (!it.base && it.g) it.base = it.g;
       $('#ai-tot').innerHTML = totHtml();
       $(`#ai-info-${inp.dataset.aiG}`).innerHTML = infoHtml(it);
     }));
@@ -2345,8 +2407,8 @@ function showAIResult(res) {
     if (oneBtn) oneBtn.onclick = () => { asOne = !asOne; draw(); };
     const saveBtn = $('#ai-save');
     if (saveBtn) saveBtn.onclick = () => {
-      const out = items.filter(it => it.g > 0).map((it, i) => {
-        const k = it.g / it.base;
+      const out = items.filter(it => it.g > 0 || !it.base).map((it, i) => {
+        const k = it.base ? it.g / it.base : 1;
         return { name: it.name.trim() || 'Jedlo', g: it.g, kcal: it.kcal * k, p: it.p * k, c: it.c * k, f: it.f * k,
           fib: it.fib * k, score: it.score, gluten: it.gluten, allergens: it.allergens, thumb: i === 0 ? thumb : undefined };
       });
@@ -2651,6 +2713,8 @@ document.addEventListener('click', ev => {
   else if (d.act === 'recipe-del') {
     if (!confirm('Zmazať tento recept?')) return;
     S.myRecipes = (S.myRecipes || []).filter(r => r.id !== Number(d.id));
+    photoDB.del(String(d.id)).catch(() => {});
+    photoUrls.delete(Number(d.id));
     save(); render(); openAllRecipes(); toast('Recept zmazaný');
   }
   else if (d.act === 'only-fav') { onlyFav = !onlyFav; openAllRecipes(); }

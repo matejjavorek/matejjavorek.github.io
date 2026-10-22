@@ -1,6 +1,6 @@
 // Offline cache pre appku. Pri zmene súborov zvýš verziu.
-const CACHE = 'jedlo-v22';
-const ASSETS = ['./', 'index.html', 'style.css?v=22', 'app.js?v=22', 'meniny.js?v=22', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'kucharka.bin'];
+const CACHE = 'jedlo-v23';
+const ASSETS = ['./', 'index.html', 'style.css?v=23', 'app.js?v=23', 'meniny.js?v=23', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'kucharka.bin'];
 
 self.addEventListener('install', e => {
   // cache: 'reload', aby sa nevzala staršia kópia z HTTP cache prehliadača
